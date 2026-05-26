@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -7,16 +8,72 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const skillRoot = path.resolve(scriptDir, "..");
 
 const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
-const result = spawnSync(npmCmd, ["install", "-g", skillRoot], {
-  stdio: "inherit",
-  shell: false,
-});
 
-if (result.status !== 0) process.exit(result.status ?? 1);
+function run(command, args, options = {}) {
+  process.stderr.write(`agent-switch installer: ${command} ${args.join(" ")}\n`);
+  const needsShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(command);
+  const result = spawnSync(command, args, {
+    stdio: "inherit",
+    shell: needsShell,
+    ...options,
+  });
+  if (result.error) {
+    process.stderr.write(`agent-switch installer: failed to run ${command}: ${result.error.message}\n`);
+    return 1;
+  }
+  return result.status ?? 1;
+}
 
-const check = spawnSync("agent-switch", ["--help"], {
-  stdio: "inherit",
-  shell: process.platform === "win32",
-});
+function npmOutput(args) {
+  const needsShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(npmCmd);
+  const result = spawnSync(npmCmd, args, {
+    encoding: "utf8",
+    shell: needsShell,
+  });
+  if (result.error || result.status !== 0) return null;
+  return result.stdout.trim();
+}
 
-process.exit(check.status ?? 0);
+function globalBinDir() {
+  const prefix = npmOutput(["prefix", "-g"]);
+  if (!prefix) return null;
+  return process.platform === "win32" ? prefix : path.join(prefix, "bin");
+}
+
+function commandCandidates() {
+  const binDir = globalBinDir();
+  const names = process.platform === "win32"
+    ? ["agent-switch.cmd", "agent-switch.ps1", "agent-switch"]
+    : ["agent-switch"];
+  const candidates = [];
+  if (binDir) {
+    for (const name of names) candidates.push(path.join(binDir, name));
+  }
+  candidates.push("agent-switch");
+  return candidates;
+}
+
+const installStatus = run(npmCmd, ["install", "-g", skillRoot]);
+if (installStatus !== 0) process.exit(installStatus);
+
+const binDir = globalBinDir();
+const env = binDir
+  ? { ...process.env, PATH: `${binDir}${path.delimiter}${process.env.PATH || ""}` }
+  : process.env;
+
+for (const candidate of commandCandidates()) {
+  if (path.isAbsolute(candidate) && !fs.existsSync(candidate)) continue;
+  const status = run(candidate, ["--help"], { env });
+  if (status === 0) {
+    process.stderr.write("agent-switch installer: agent-switch is installed and verified.\n");
+    process.exit(0);
+  }
+}
+
+process.stderr.write(
+  "agent-switch installer: installation finished, but verification failed.\n" +
+  `  npm global prefix: ${npmOutput(["prefix", "-g"]) || "(unknown)"}\n` +
+  `  expected bin dir: ${binDir || "(unknown)"}\n` +
+  "  Try opening a new terminal, then run: agent-switch --help\n"
+);
+process.exit(1);
