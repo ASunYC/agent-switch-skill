@@ -77,6 +77,42 @@ agent-switch export <session>/<seq> --format raw
 
 Load `references/agent-switch-capabilities.md` when the user asks for the full provider list, storage behavior, export formats, proxy-only mode, or migration/removal commands.
 
+## Hermes Local API
+
+When the user asks to call Hermes, treat Hermes as a local API service, not as a CLI. The default base URL is:
+
+```bash
+http://127.0.0.1:8642
+```
+
+First check health:
+
+```bash
+GET http://127.0.0.1:8642/health
+```
+
+If Hermes returns `401` for model or chat endpoints and no saved Hermes auth config exists, stop and ask the user for the required Authorization value or token. Do not guess a token and do not silently reuse unrelated OpenAI or Anthropic credentials.
+
+After the user provides the Hermes auth config, save it locally for future calls in:
+
+```text
+~/.agent-switch/hermes.json
+```
+
+Use this JSON shape:
+
+```json
+{
+  "baseUrl": "http://127.0.0.1:8642",
+  "authHeader": "Authorization",
+  "authValue": "Bearer <token>"
+}
+```
+
+Create `~/.agent-switch` if needed and restrict file permissions when the platform supports it. Treat this file as sensitive local data. On later Hermes calls, read this config first; only ask again if the file is missing, invalid, or Hermes still returns `401`.
+
+Load `references/hermes-local-api.md` when the user asks for Hermes setup, auth storage, or local API calling behavior.
+
 ## Code Layout
 
 - `code/agent-switch-core`: internal capture engine, provider wrappers, store, dashboard, exports, MCP server, and tests.

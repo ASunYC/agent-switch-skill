@@ -25,6 +25,7 @@ It helps you:
 - Export captured requests as Markdown, raw HTTP, JSON, or HAR
 - Return a concise handoff summary back to the current Codex session
 - Run proxy-only mode for IDEs or custom OpenAI/Anthropic-compatible clients
+- Remember local Hermes API authorization after asking the user once
 
 ## Design Goals
 
@@ -284,6 +285,22 @@ Built-in provider recipes include:
 - `vertex`
 
 See [references/agent-switch-capabilities.md](./references/agent-switch-capabilities.md) for provider details, storage behavior, export formats, and proxy-only usage.
+
+## Hermes Local API
+
+Hermes is treated as a local Docker-hosted API service, not as a spawned CLI. The default endpoint is:
+
+```text
+http://127.0.0.1:8642
+```
+
+When Hermes returns `401` and no saved auth config exists, Agent Switch Skill asks the user for the required Authorization value and stores it locally in:
+
+```text
+~/.agent-switch/hermes.json
+```
+
+See [references/hermes-local-api.md](./references/hermes-local-api.md) for the saved config format and call flow.
 
 ## Project Structure
 
