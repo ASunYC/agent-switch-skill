@@ -30,7 +30,7 @@ function groupRetries(entries, windowMs = 60_000) {
   return out;
 }
 
-const state = { session: null, live: null, entries: [], selected: null, tab: "overview", diff: false, picks: [], errorsOnly: false };
+const state = { session: null, live: null, entries: [], selected: null, tab: "flow", diff: false, picks: [], errorsOnly: false };
 
 async function api(path) {
   const r = await fetch(path);
@@ -57,6 +57,15 @@ async function loadList() {
   if (!state.session) return;
   const { entries } = await api("/api/requests?session=" + encodeURIComponent(state.session));
   state.entries = entries;
+  if (!state.diff && (!state.selected || !state.entries.some((e) => e.id === state.selected))) {
+    const pick = [...state.entries].reverse().find((e) => !e.error && statusClass(e.status) === "ok" && e.nMessages > 0)
+      || [...state.entries].reverse().find((e) => !e.error && statusClass(e.status) === "ok")
+      || state.entries.at(-1);
+    if (pick) {
+      state.selected = pick.id;
+      loadDetail(pick.id);
+    }
+  }
   renderList();
 }
 
@@ -389,6 +398,10 @@ function connectStream() {
       const i = state.entries.findIndex((e) => e.id === s.id);
       if (i >= 0) state.entries[i] = s;
       else state.entries.push(s);
+      if (!state.diff && !state.selected && !s.error && statusClass(s.status) === "ok") {
+        state.selected = s.id;
+        loadDetail(s.id);
+      }
       renderList();
       if (s.id === state.selected) loadDetail(s.id);
     };
