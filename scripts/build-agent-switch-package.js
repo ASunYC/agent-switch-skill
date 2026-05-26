@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const skillRoot = path.resolve(scriptDir, "..");
-const distDir = path.join(skillRoot, "dist");
+const cliDir = path.join(skillRoot, "cli");
+const pkg = JSON.parse(fs.readFileSync(path.join(skillRoot, "package.json"), "utf8"));
 const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
 
 function run(args, options = {}) {
@@ -24,19 +25,24 @@ function run(args, options = {}) {
   return result.status ?? 1;
 }
 
-fs.mkdirSync(distDir, { recursive: true });
+fs.mkdirSync(cliDir, { recursive: true });
+for (const name of fs.readdirSync(cliDir)) {
+  if (name.startsWith(`${pkg.name}-`) && name.endsWith(".tgz")) {
+    fs.rmSync(path.join(cliDir, name), { force: true });
+  }
+}
 
 let status = run(["install", "--omit=dev"]);
 if (status !== 0) process.exit(status);
 
-status = run(["pack", "--pack-destination", distDir]);
+status = run(["pack", "--pack-destination", cliDir]);
 if (status !== 0) process.exit(status);
 
-const packages = fs.readdirSync(distDir)
+const packages = fs.readdirSync(cliDir)
   .filter((name) => name.endsWith(".tgz"))
   .map((name) => ({
     name,
-    time: fs.statSync(path.join(distDir, name)).mtimeMs,
+    time: fs.statSync(path.join(cliDir, name)).mtimeMs,
   }))
   .sort((a, b) => b.time - a.time);
 
@@ -46,7 +52,7 @@ if (!packages.length) {
 }
 
 process.stdout.write(
-  `\nCreated ${path.join(distDir, packages[0].name)}\n\n` +
+  `\nCreated ${path.join(cliDir, packages[0].name)}\n\n` +
   "Install it on any machine with Node.js 18+:\n\n" +
-  `  npm install -g ${path.join(distDir, packages[0].name)}\n\n`
+  `  npm install -g ${path.join(cliDir, packages[0].name)}\n\n`
 );

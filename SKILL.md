@@ -23,20 +23,20 @@ If `agent-switch` is missing from PATH, install it from this skill directory by 
 node scripts/install-agent-switch.js
 ```
 
-The installer runs `npm install -g <this-skill-directory>` and verifies the result with `agent-switch --help`. If installation fails because Node.js is missing or too old, tell the user to install Node.js 18 or newer and retry.
+The installer installs the bundled CLI tarball from `cli/agent-switch-skill-<version>.tgz` and verifies the result with `agent-switch --help`. If the tarball is missing in a development checkout, the installer falls back to installing production dependencies and then running `npm install -g <this-skill-directory>`. If installation fails because Node.js is missing or too old, tell the user to install Node.js 18 or newer and retry.
 
 ## Manual Install
 
-From the skill directory, install the command globally:
-
-```bash
-npm install -g .
-```
-
-Or run the included installer:
+From the skill directory, run the included installer:
 
 ```bash
 node scripts/install-agent-switch.js
+```
+
+Or install the bundled CLI package directly:
+
+```bash
+npm install -g cli/agent-switch-skill-0.1.0.tgz
 ```
 
 Verify the command exists:
@@ -81,6 +81,7 @@ Load `references/agent-switch-capabilities.md` when the user asks for the full p
 
 - `code/agent-switch-core`: internal capture engine, provider wrappers, store, dashboard, exports, MCP server, and tests.
 - `code/agent-switch`: user-facing CLI entrypoint that invokes the internal engine and prints the Codex handoff.
+- `cli/agent-switch-skill-<version>.tgz`: bundled cross-platform npm CLI package with runtime dependencies.
 - `scripts/install-agent-switch.js`: deterministic local installer for the skill command.
 
 Treat captured logs as sensitive. agent-switch masks auth headers by default, but prompts, tool outputs, file paths, and source snippets may still be stored.

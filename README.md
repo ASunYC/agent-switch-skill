@@ -32,7 +32,7 @@ Agent Switch Skill is designed to be simple for agents to bootstrap automaticall
 
 - Node.js 18+ runtime
 - Skill-first installation flow for Codex
-- Global CLI entrypoint through `npm install -g .`
+- Bundled CLI package under `cli/`
 - One-command agent switching
 - Local-only capture storage
 - Provider recipes for common coding CLIs and model gateways
@@ -52,7 +52,7 @@ If the command is missing, run the bundled installer from this skill directory:
 node scripts/install-agent-switch.js
 ```
 
-The installer runs `npm install -g <this-skill-directory>`, verifies `agent-switch --help`, and prints diagnostic output if installation or PATH verification fails.
+The installer installs the bundled CLI package from `cli/`, verifies `agent-switch --help`, and prints diagnostic output if installation or PATH verification fails.
 
 ## Features
 
@@ -135,21 +135,21 @@ Verify the installation:
 agent-switch --help
 ```
 
-### Option 3: Build a Cross-Platform CLI Package
+### Option 3: Build the Bundled CLI Package
 
-Build a local npm tarball that includes the runtime dependencies:
+Build the npm tarball that ships with the skill and includes runtime dependencies:
 
 ```bash
 npm run build:package
 ```
 
-The package is written to `dist/` and can be installed on any machine with Node.js 18 or newer:
+The package is written to `cli/` and can be installed on any machine with Node.js 18 or newer:
 
 ```bash
-npm install -g dist/agent-switch-skill-0.1.0.tgz
+npm install -g cli/agent-switch-skill-0.1.0.tgz
 ```
 
-This is the recommended release shape when you want to move the CLI between machines without relying on a copied skill directory to already contain `node_modules`.
+This is the release shape used by `scripts/install-agent-switch.js`, so a cloned skill repository can install the CLI without relying on the skill directory to already contain `node_modules`.
 
 ## Usage
 
@@ -294,6 +294,8 @@ agent-switch-skill/
 |-- package.json                      # Global CLI package metadata
 |-- agents/
 |   `-- openai.yaml                   # Agent metadata
+|-- cli/
+|   `-- agent-switch-skill-0.1.0.tgz  # Bundled CLI package with runtime dependencies
 |-- scripts/
 |   |-- build-agent-switch-package.js # Build a dependency-bundled npm package
 |   `-- install-agent-switch.js       # One-command CLI installer
@@ -343,7 +345,7 @@ Agent Switch masks auth headers by default. Captured logs may still include prom
 
 ### Why does `agent-switch --help` fail after installing the skill?
 
-The skill and the CLI are two layers. Installing the skill gives Codex the instructions and bundled code. Installing the CLI adds `agent-switch` to your global PATH. Run:
+The skill and the CLI are two layers. Installing the skill gives Codex the instructions and bundled CLI package. Installing the CLI adds `agent-switch` to your global PATH. Run:
 
 ```bash
 node scripts/install-agent-switch.js
@@ -357,7 +359,7 @@ agent-switch --help
 
 ### Can I use `npx` instead of installing globally?
 
-You can run temporary commands with package tooling during development, but the recommended skill flow is to install the bundled CLI globally from the skill directory so Codex can call `agent-switch` consistently.
+You can run temporary commands with package tooling during development, but the recommended skill flow is to install the bundled CLI package from `cli/` so Codex can call `agent-switch` consistently.
 
 ### Why is the Codex dashboard empty?
 

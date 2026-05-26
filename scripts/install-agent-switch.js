@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const skillRoot = path.resolve(scriptDir, "..");
+const pkg = JSON.parse(fs.readFileSync(path.join(skillRoot, "package.json"), "utf8"));
+const bundledPackage = path.join(skillRoot, "cli", `${pkg.name}-${pkg.version}.tgz`);
 
 const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
 
@@ -53,10 +55,19 @@ function commandCandidates() {
   return candidates;
 }
 
-const depsStatus = run(npmCmd, ["install", "--omit=dev"], { cwd: skillRoot });
-if (depsStatus !== 0) process.exit(depsStatus);
+let installStatus;
 
-const installStatus = run(npmCmd, ["install", "-g", skillRoot]);
+if (fs.existsSync(bundledPackage)) {
+  installStatus = run(npmCmd, ["install", "-g", bundledPackage]);
+} else {
+  process.stderr.write(
+    `agent-switch installer: bundled CLI package not found: ${bundledPackage}\n` +
+    "agent-switch installer: falling back to development install from the skill directory.\n"
+  );
+  const depsStatus = run(npmCmd, ["install", "--omit=dev"], { cwd: skillRoot });
+  if (depsStatus !== 0) process.exit(depsStatus);
+  installStatus = run(npmCmd, ["install", "-g", skillRoot]);
+}
 if (installStatus !== 0) process.exit(installStatus);
 
 const binDir = globalBinDir();
