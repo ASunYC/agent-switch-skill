@@ -6,13 +6,30 @@
   "bin": {
     "agent-switch": "code/agent-switch/bin/agent-switch.js"
   },
+  "files": [
+    "README.md",
+    "SKILL.md",
+    "agents/",
+    "code/agent-switch/bin/",
+    "code/agent-switch/src/",
+    "code/agent-switch-core/bin/",
+    "code/agent-switch-core/package.json",
+    "code/agent-switch-core/src/",
+    "code/agent-switch-core/web/",
+    "code/agent-switch-core/LICENSE",
+    "references/",
+    "scripts/install-agent-switch.js",
+    "scripts/build-agent-switch-package.js"
+  ],
   "scripts": {
+    "build:package": "node scripts/build-agent-switch-package.js",
     "test": "node --test code/agent-switch-core/test/*.js code/agent-switch/test/*.js"
   },
   "engines": {
     "node": ">=18"
   },
   "license": "MIT",
+  "bundledDependencies": true,
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "cross-spawn": "^7.0.6",

@@ -135,6 +135,22 @@ Verify the installation:
 agent-switch --help
 ```
 
+### Option 3: Build a Cross-Platform CLI Package
+
+Build a local npm tarball that includes the runtime dependencies:
+
+```bash
+npm run build:package
+```
+
+The package is written to `dist/` and can be installed on any machine with Node.js 18 or newer:
+
+```bash
+npm install -g dist/agent-switch-skill-0.1.0.tgz
+```
+
+This is the recommended release shape when you want to move the CLI between machines without relying on a copied skill directory to already contain `node_modules`.
+
 ## Usage
 
 ### Quick Start
@@ -279,6 +295,7 @@ agent-switch-skill/
 |-- agents/
 |   `-- openai.yaml                   # Agent metadata
 |-- scripts/
+|   |-- build-agent-switch-package.js # Build a dependency-bundled npm package
 |   `-- install-agent-switch.js       # One-command CLI installer
 |-- references/
 |   `-- agent-switch-capabilities.md  # Extended capability map

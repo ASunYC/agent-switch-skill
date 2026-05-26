@@ -53,6 +53,9 @@ function commandCandidates() {
   return candidates;
 }
 
+const depsStatus = run(npmCmd, ["install", "--omit=dev"], { cwd: skillRoot });
+if (depsStatus !== 0) process.exit(depsStatus);
+
 const installStatus = run(npmCmd, ["install", "-g", skillRoot]);
 if (installStatus !== 0) process.exit(installStatus);
 
