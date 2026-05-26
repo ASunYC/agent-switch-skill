@@ -1,0 +1,21 @@
+{
+  "name": "agent-switch-skill",
+  "version": "0.1.0",
+  "description": "Skill-bundled CLI for switching coding agents while capturing model conversations.",
+  "type": "module",
+  "bin": {
+    "agent-switch": "code/agent-switch/bin/agent-switch.js"
+  },
+  "scripts": {
+    "test": "node --test code/agent-switch-core/test/*.js code/agent-switch/test/*.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "cross-spawn": "^7.0.6",
+    "zod": "^4.4.3"
+  }
+}

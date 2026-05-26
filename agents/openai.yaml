@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Switch Skill"
+  short_description: "Switch coding CLIs and inspect their model conversations."
+  default_prompt: "Use $agent-switch-skill to install agent-switch and run another coding CLI with captured conversation logs."
