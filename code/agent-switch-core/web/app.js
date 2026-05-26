@@ -30,7 +30,20 @@ function groupRetries(entries, windowMs = 60_000) {
   return out;
 }
 
-const state = { session: null, live: null, entries: [], selected: null, detail: null, tab: "flow", diff: false, picks: [], errorsOnly: false, loadToken: 0 };
+const state = {
+  session: null,
+  live: null,
+  entries: [],
+  selected: null,
+  detail: null,
+  tab: "flow",
+  diff: false,
+  picks: [],
+  errorsOnly: false,
+  hideNoise: true,
+  sessionMeta: new Map(),
+  loadToken: 0,
+};
 
 async function api(path) {
   const r = await fetch(path);
@@ -40,17 +53,17 @@ async function api(path) {
 // ---- sessions + list -----------------------------------------------------
 
 async function loadSessions() {
-  const { sessions, live } = await api("/api/sessions");
+  const data = await api("/api/sessions");
+  const sessions = (data.sessions || []).filter((s) => s !== "sessions");
+  const live = data.live === "sessions" ? null : data.live;
   state.live = live;
-  const sel = $("#session");
-  sel.innerHTML = "";
-  for (const s of sessions) {
-    sel.append(el("option", { value: s, textContent: s + (s === live ? "  (live)" : "") }));
-  }
+  renderSessionOptions(sessions);
   state.session = state.session || live || sessions[0] || null;
-  if (state.session) sel.value = state.session;
+  if (state.session) $("#session").value = state.session;
   $("#live").classList.toggle("off", !live);
   await loadList();
+  hydrateSessionOptions(sessions);
+  renderCurrentSummary();
 }
 
 async function loadList() {
@@ -59,6 +72,8 @@ async function loadList() {
   const { entries } = await api("/api/requests?session=" + encodeURIComponent(state.session));
   if (token !== state.loadToken) return;
   state.entries = entries;
+  state.sessionMeta.set(state.session, sessionMeta(entries));
+  renderSessionOptions([...$("#session").options].map((o) => o.value));
   if (!state.diff && (!state.selected || !state.entries.some((e) => e.id === state.selected))) {
     const pick = bestEntry(state.entries);
     state.selected = pick?.id ?? null;
@@ -70,13 +85,59 @@ async function loadList() {
 }
 
 function bestEntry(entries) {
-  return [...entries].reverse().find((e) => !e.error && statusClass(e.status) === "ok" && e.nMessages > 0)
-    || [...entries].reverse().find((e) => !e.error && statusClass(e.status) === "ok")
+  const visible = entries.filter((e) => !isNoise(e));
+  return [...visible].reverse().find((e) => !e.error && statusClass(e.status) === "ok" && e.nMessages > 0)
+    || [...visible].reverse().find((e) => !e.error && statusClass(e.status) === "ok")
+    || visible.at(-1)
     || entries.at(-1);
+}
+
+async function hydrateSessionOptions(sessions) {
+  await Promise.all(sessions.map(async (s) => {
+    if (state.sessionMeta.has(s)) return;
+    try {
+      const { entries } = await api("/api/requests?session=" + encodeURIComponent(s));
+      state.sessionMeta.set(s, sessionMeta(entries));
+    } catch {}
+  }));
+  renderSessionOptions(sessions);
+}
+
+function sessionMeta(entries) {
+  const signal = entries.filter((e) => !isNoise(e));
+  return {
+    total: entries.length,
+    signal: signal.length,
+    errors: signal.filter((e) => e.error || statusClass(e.status) === "4xx" || statusClass(e.status) === "5xx").length,
+  };
+}
+
+function renderSessionOptions(sessions) {
+  const sel = $("#session");
+  const current = state.session || sel.value;
+  sel.innerHTML = "";
+  for (const s of sessions) {
+    sel.append(el("option", { value: s, textContent: sessionLabel(s) }));
+  }
+  if (current) sel.value = current;
+}
+
+function sessionLabel(s) {
+  const when = s === "sessions" ? "sessions" : s.slice(0, 19).replace("T", " ");
+  const meta = state.sessionMeta.get(s);
+  const count = meta ? ` - ${meta.signal} req${meta.total !== meta.signal ? ` (${meta.total - meta.signal} noise)` : ""}` : "";
+  const live = s === state.live ? " - live" : "";
+  return when + count + live;
+}
+
+function isNoise(e) {
+  const method = String(e.method || "").toUpperCase();
+  return !e.model && e.nMessages === 0 && e.nTools === 0 && (method === "HEAD" || method === "OPTIONS" || e.url === "/");
 }
 
 function updateErrorsBtn() {
   const count = state.entries.filter((e) => {
+    if (state.hideNoise && isNoise(e)) return false;
     const sc = statusClass(e.status);
     return sc === "4xx" || sc === "5xx" || e.error != null;
   }).length;
@@ -87,9 +148,11 @@ function updateErrorsBtn() {
 
 function renderList() {
   updateErrorsBtn();
+  updateNoiseBtn();
   const list = $("#list");
   list.innerHTML = "";
   let visible = state.entries;
+  if (state.hideNoise) visible = visible.filter((e) => !isNoise(e));
   if (state.errorsOnly) {
     visible = visible.filter((e) => {
       const sc = statusClass(e.status);
@@ -97,29 +160,46 @@ function renderList() {
     });
   }
   const grouped = groupRetries(visible);
+  if (!grouped.length) {
+    const hiddenNoise = state.hideNoise && state.entries.some((e) => isNoise(e));
+    list.append(el("div", { className: "list-empty", textContent: hiddenNoise ? "Only probe requests captured. Turn noise on to inspect them." : "No requests in this session." }));
+    renderCurrentSummary();
+    return;
+  }
   for (const e of grouped) {
     const sc = e.error ? "5xx" : statusClass(e.status);
-    const rowClass = ["row", sc === "4xx" ? "status-4xx" : sc === "5xx" ? "status-5xx" : ""].filter(Boolean).join(" ");
+    const rowClass = ["row", isNoise(e) ? "noise" : "", sc === "4xx" ? "status-4xx" : sc === "5xx" ? "status-5xx" : ""].filter(Boolean).join(" ");
     const row = el("div", { className: rowClass });
     if (e.id === state.selected) row.classList.add("sel");
     if (state.picks.includes(e.id)) row.classList.add("pick");
     const statusTxtClass = sc === "4xx" ? "status-txt-4xx" : sc === "5xx" ? "status-txt-5xx" : (e.pending ? "pending" : "");
     const statusText = e.error ? "transport error" : (e.pending ? "pending..." : "HTTP " + e.status);
+    const method = e.method || "POST";
+    const endpoint = e.url || "/";
+    const top = el("div", { className: "top" },
+      el("span", { className: "endpoint", title: `${method} ${endpoint}`, textContent: `#${e.seq} - ${method} ${endpoint}` }),
+      el("span", { className: `status-pill ${statusTxtClass}`, textContent: statusText }));
+    const meta = el("div", { className: "meta" },
+      el("span", { className: "model", textContent: e.model || e.format || "probe" }),
+      el("span", { textContent: `${e.nMessages} messages` }),
+      el("span", { textContent: `${e.nTools} tools` }));
     const sub = el("div", { className: "sub" },
-      el("span", { className: "time", textContent: e.ts ? new Date(e.ts).toLocaleTimeString() : "" }),
-      el("span", { textContent: ` ${e.format ? e.format + " / " : ""}${e.nMessages} msg / ${e.nTools} tools / ` }),
-      el("span", { className: statusTxtClass, textContent: statusText }));
-    if (e.nToolUse) sub.append(el("span", { className: "toolcalls", title: "tool calls in this request", textContent: ` tool:${e.nToolUse}` }));
+      el("span", { className: "time", textContent: e.ts ? new Date(e.ts).toLocaleTimeString() : "" }));
+    if (isNoise(e)) sub.append(el("span", { className: "noise-badge", textContent: " probe" }));
+    if (e.nToolUse) sub.append(el("span", { className: "toolcalls", title: "tool calls in this request", textContent: ` tool calls:${e.nToolUse}` }));
     if (e.retries.length) sub.append(el("span", { className: "retry-badge", textContent: ` retried x${e.retries.length}` }));
-    row.append(
-      el("div", { className: "top" },
-        el("span", { className: "seq", textContent: "#" + e.seq }),
-        el("span", { textContent: e.model || "-" })),
-      sub
-    );
+    row.append(top, meta, sub);
     row.onclick = () => onPick(e.id);
     list.append(row);
   }
+  renderCurrentSummary();
+}
+
+function updateNoiseBtn() {
+  const btn = $("#noiseBtn");
+  const hidden = state.entries.filter((e) => isNoise(e)).length;
+  btn.textContent = state.hideNoise ? `noise: hidden${hidden ? ` (${hidden})` : ""}` : "noise: shown";
+  btn.classList.toggle("on", !state.hideNoise);
 }
 
 function onPick(id) {
@@ -145,6 +225,7 @@ async function loadDetail(id, token = state.loadToken) {
 
 function renderEmptyDetail(message = "Select a request, or start chatting in Claude Code.") {
   $("#detail").innerHTML = `<div class="empty">${esc(message)}</div>`;
+  renderCurrentSummary();
 }
 
 const TABS = ["overview", "flow", "system", "messages", "tools", "response", "headers"];
@@ -152,6 +233,7 @@ const TABS = ["overview", "flow", "system", "messages", "tools", "response", "he
 function renderDetail() {
   const rec = state.detail;
   if (!rec) return renderEmptyDetail();
+  renderCurrentSummary();
   const d = $("#detail");
   d.innerHTML = "";
   const tabs = el("div", { className: "tabs" });
@@ -164,6 +246,27 @@ function renderDetail() {
   const pane = el("div", { className: "pane" });
   pane.innerHTML = paneHtml(rec, state.tab);
   d.append(pane);
+}
+
+function renderCurrentSummary() {
+  const target = $("#requestSummary");
+  if (!target) return;
+  const entry = state.entries.find((e) => e.id === state.selected);
+  if (!entry) {
+    target.textContent = state.session ? "No model request selected" : "No session selected";
+    return;
+  }
+  const status = entry.error ? "transport error" : entry.pending ? "pending" : `HTTP ${entry.status}`;
+  const parts = [
+    `#${entry.seq}`,
+    entry.model || entry.format || "probe",
+    status,
+    `${entry.nMessages} msg`,
+    `${entry.nTools} tools`,
+  ];
+  const cost = state.detail?.id === entry.id ? state.detail?.parsed?.cost?.usd : null;
+  if (cost != null) parts.push("$" + cost.toFixed(5));
+  target.textContent = parts.join(" - ");
 }
 
 function paneHtml(rec, tab) {
@@ -193,6 +296,7 @@ function overviewHtml(rec, parsed, view) {
     ? `<div class="block" style="border-color:var(--del)"><div class="h" style="color:var(--del)">error</div><pre style="color:var(--del)">${esc(typeof errBody === "string" ? errBody : JSON.stringify(errBody, null, 2))}</pre></div>`
     : "";
   return `
+    <div class="overview-summary">${overviewSummary(rec, parsed, view)}</div>
     <div class="cards">
       ${statusCardCls ? card("status", statusCardVal, undefined, statusCardCls) : ""}
       ${card("format", parsed.format || rec.format || "-")}
@@ -206,9 +310,18 @@ function overviewHtml(rec, parsed, view) {
       ${card("stop", parsed.response?.stop_reason || "-")}
     </div>
     ${errHtml}
-    <div>${dl("raw")}${dl("md")}${dl("json")}${dl("har")}</div>
+    <div class="export-bar"><span>Export</span>${dl("md")}${dl("json")}${dl("har")}${dl("raw")}</div>
     <div class="block"><div class="h">request line</div><pre>${esc(rec.request?.method)} ${esc(rec.request?.url)}</pre></div>
     <p style="color:var(--muted)">${view.system.length} system blocks / ${view.messages.length} messages / ${view.tools.length} tools</p>`;
+}
+
+function overviewSummary(rec, parsed, view) {
+  const body = rec.request?.body || {};
+  const status = rec.response?.status ?? null;
+  const statusText = status != null ? `HTTP ${status}` : "pending";
+  const model = body.model || rec.model || "unknown model";
+  const stop = parsed.response?.stop_reason ? ` and stopped with ${parsed.response.stop_reason}` : "";
+  return esc(`Request #${rec.seq || "?"} sent ${view.messages.length} messages to ${model}, offered ${view.tools.length} tools, returned ${statusText}${stop}.`);
 }
 
 function card(k, v, sub, cls = "") {
@@ -410,6 +523,8 @@ function connectStream() {
       const i = state.entries.findIndex((e) => e.id === s.id);
       if (i >= 0) state.entries[i] = s;
       else state.entries.push(s);
+      state.sessionMeta.set(state.session || s.session, sessionMeta(state.entries));
+      renderSessionOptions([...$("#session").options].map((o) => o.value));
       if (!state.diff && !state.selected && !s.error && statusClass(s.status) === "ok") {
         state.selected = s.id;
         loadDetail(s.id, state.loadToken);
@@ -431,6 +546,17 @@ $("#session").onchange = (e) => {
   loadList();
 };
 $("#errorsBtn").onclick = () => { state.errorsOnly = !state.errorsOnly; renderList(); };
+$("#noiseBtn").onclick = () => {
+  state.hideNoise = !state.hideNoise;
+  if (state.hideNoise && state.selected && isNoise(state.entries.find((e) => e.id === state.selected) || {})) {
+    const pick = bestEntry(state.entries);
+    state.selected = pick?.id ?? null;
+    state.detail = null;
+    if (pick) loadDetail(pick.id, state.loadToken);
+    else renderEmptyDetail("Only probe requests captured in this session.");
+  }
+  renderList();
+};
 $("#diffBtn").onclick = (e) => {
   state.diff = !state.diff;
   state.picks = [];

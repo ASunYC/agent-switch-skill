@@ -28,9 +28,20 @@ header {
   padding: 8px 14px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
+  min-height: 42px;
 }
 .logo { color: var(--accent); font-weight: 700; letter-spacing: .3px; }
 .spacer { flex: 1; }
+.request-summary {
+  min-width: 0;
+  max-width: 48vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+}
 .badge {
   font-size: 11px; color: #0e1116; background: var(--accent);
   padding: 1px 7px; border-radius: 10px; font-weight: 600;
@@ -45,27 +56,58 @@ button:hover { border-color: var(--accent); }
 button.on { background: var(--accent); color: #0e1116; border-color: var(--accent); }
 main { flex: 1; display: flex; min-height: 0; }
 aside {
-  width: 320px; flex-shrink: 0; overflow-y: auto;
+  width: 360px; flex-shrink: 0; overflow-y: auto;
   border-right: 1px solid var(--border); background: var(--panel);
 }
 .row {
-  padding: 8px 12px; border-bottom: 1px solid var(--border);
-  cursor: pointer; display: flex; flex-direction: column; gap: 2px;
+  padding: 10px 12px; border-bottom: 1px solid var(--border);
+  cursor: pointer; display: flex; flex-direction: column; gap: 5px;
 }
 .row:hover { background: var(--panel2); }
 .row.sel { background: var(--panel2); border-left: 3px solid var(--accent); padding-left: 9px; }
 .row.pick { box-shadow: inset 3px 0 0 var(--cache); }
-.row .top { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 12px; }
+.row.noise { opacity: .62; }
+.row .top { display: flex; justify-content: space-between; gap: 10px; font-family: var(--mono); font-size: 12px; }
+.row .endpoint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row .meta {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.row .meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row .meta .model { color: var(--fg); font-family: var(--mono); }
 .row .sub { color: var(--muted); font-size: 11px; }
 .row .sub .time { color: var(--accent); opacity: .8; }
 .row .sub .toolcalls { color: var(--cache); }
 .row .seq { color: var(--accent); }
+.status-pill {
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 7px;
+  color: var(--muted);
+  background: var(--bg);
+  font-size: 11px;
+}
 .pending { color: var(--cache); }
 .status-txt-4xx { color: var(--cache); }
 .status-txt-5xx { color: var(--del); }
 .row.status-4xx { border-left: 3px solid var(--cache); padding-left: 9px; }
 .row.status-5xx { border-left: 3px solid var(--del); padding-left: 9px; }
 .retry-badge { color: var(--muted); }
+.noise-badge { color: var(--muted); }
+.list-empty { color: var(--muted); padding: 18px 14px; font-size: 12px; }
 .card.err-card { border-color: var(--del); }
 .card.err-card .v { color: var(--del); }
 .card.warn-card { border-color: var(--cache); }
@@ -76,6 +118,14 @@ aside {
 .tab { padding: 6px 12px; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; color: var(--muted); }
 .tab.on { color: var(--fg); background: var(--panel); border-color: var(--border); }
 .pane { padding: 16px 18px; }
+.overview-summary {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  color: var(--fg);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
 .cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; min-width: 120px; }
 .card .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
@@ -113,7 +163,15 @@ aside {
 .diff-section.add { color: var(--add); }
 .diff-section.del { color: var(--del); }
 kbd { font-family: var(--mono); background: var(--panel2); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; font-size: 11px; }
-a.dl { color: var(--accent); margin-right: 14px; }
+.export-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+a.dl { color: var(--accent); margin-right: 4px; }
 
 /* ---- flow: conversation-level sequence diagram ---- */
 .flow .toolmenu { margin: 0 0 12px; }
