@@ -30,7 +30,7 @@ function groupRetries(entries, windowMs = 60_000) {
   return out;
 }
 
-const state = { session: null, live: null, entries: [], selected: null, tab: "flow", diff: false, picks: [], errorsOnly: false };
+const state = { session: null, live: null, entries: [], selected: null, detail: null, tab: "flow", diff: false, picks: [], errorsOnly: false, loadToken: 0 };
 
 async function api(path) {
   const r = await fetch(path);
@@ -55,18 +55,24 @@ async function loadSessions() {
 
 async function loadList() {
   if (!state.session) return;
+  const token = ++state.loadToken;
   const { entries } = await api("/api/requests?session=" + encodeURIComponent(state.session));
+  if (token !== state.loadToken) return;
   state.entries = entries;
   if (!state.diff && (!state.selected || !state.entries.some((e) => e.id === state.selected))) {
-    const pick = [...state.entries].reverse().find((e) => !e.error && statusClass(e.status) === "ok" && e.nMessages > 0)
-      || [...state.entries].reverse().find((e) => !e.error && statusClass(e.status) === "ok")
-      || state.entries.at(-1);
-    if (pick) {
-      state.selected = pick.id;
-      loadDetail(pick.id);
-    }
+    const pick = bestEntry(state.entries);
+    state.selected = pick?.id ?? null;
+    state.detail = null;
+    if (pick) loadDetail(pick.id, token);
+    else renderEmptyDetail("No requests in this session yet.");
   }
   renderList();
+}
+
+function bestEntry(entries) {
+  return [...entries].reverse().find((e) => !e.error && statusClass(e.status) === "ok" && e.nMessages > 0)
+    || [...entries].reverse().find((e) => !e.error && statusClass(e.status) === "ok")
+    || entries.at(-1);
 }
 
 function updateErrorsBtn() {
@@ -125,21 +131,27 @@ function onPick(id) {
   }
   state.selected = id;
   renderList();
-  loadDetail(id);
+  loadDetail(id, state.loadToken);
 }
 
 // ---- detail --------------------------------------------------------------
 
-async function loadDetail(id) {
+async function loadDetail(id, token = state.loadToken) {
   const rec = await api("/api/request/" + encodeURIComponent(id));
+  if (token !== state.loadToken || id !== state.selected) return;
   state.detail = rec;
   renderDetail();
+}
+
+function renderEmptyDetail(message = "Select a request, or start chatting in Claude Code.") {
+  $("#detail").innerHTML = `<div class="empty">${esc(message)}</div>`;
 }
 
 const TABS = ["overview", "flow", "system", "messages", "tools", "response", "headers"];
 
 function renderDetail() {
   const rec = state.detail;
+  if (!rec) return renderEmptyDetail();
   const d = $("#detail");
   d.innerHTML = "";
   const tabs = el("div", { className: "tabs" });
@@ -400,15 +412,24 @@ function connectStream() {
       else state.entries.push(s);
       if (!state.diff && !state.selected && !s.error && statusClass(s.status) === "ok") {
         state.selected = s.id;
-        loadDetail(s.id);
+        loadDetail(s.id, state.loadToken);
       }
       renderList();
-      if (s.id === state.selected) loadDetail(s.id);
+      if (s.id === state.selected) loadDetail(s.id, state.loadToken);
     };
   } catch {}
 }
 
-$("#session").onchange = (e) => { state.session = e.target.value; state.picks = []; loadList(); };
+$("#session").onchange = (e) => {
+  state.session = e.target.value;
+  state.selected = null;
+  state.detail = null;
+  state.entries = [];
+  state.picks = [];
+  renderList();
+  renderEmptyDetail("Loading session...");
+  loadList();
+};
 $("#errorsBtn").onclick = () => { state.errorsOnly = !state.errorsOnly; renderList(); };
 $("#diffBtn").onclick = (e) => {
   state.diff = !state.diff;
