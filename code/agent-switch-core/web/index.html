@@ -7,19 +7,43 @@
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <header>
+    <header class="appbar">
       <span class="logo">agent-switch</span>
-      <select id="session"></select>
-      <span id="live" class="badge">live</span>
-      <span id="requestSummary" class="request-summary">No request selected</span>
-      <span class="spacer"></span>
-      <button id="noiseBtn" title="Show or hide probe requests such as HEAD /">noise: hidden</button>
-      <button id="errorsBtn">errors (0)</button>
-      <button id="diffBtn" title="Pick two requests to compare">Diff: off</button>
+      <span class="app-subtitle">Conversation capture dashboard</span>
     </header>
-    <main>
-      <aside id="list"></aside>
-      <section id="detail"><div class="empty">Select a request, or start chatting in Claude Code.</div></section>
+    <main class="workspace">
+      <section class="sidebar-panel" aria-labelledby="sessionsTitle">
+        <div class="panel-titlebar">
+          <div>
+            <h1 id="sessionsTitle">Sessions</h1>
+            <p>Browse captured CLI conversations and requests.</p>
+          </div>
+          <span id="live" class="badge">live</span>
+        </div>
+        <div class="session-picker">
+          <label for="session">Current session</label>
+          <select id="session"></select>
+        </div>
+        <div class="panel-actions">
+          <button id="noiseBtn" title="Show or hide probe requests such as HEAD /">noise: hidden</button>
+          <button id="errorsBtn">errors (0)</button>
+          <button id="diffBtn" title="Pick two requests to compare">Diff: off</button>
+        </div>
+        <div class="list-titlebar">
+          <span>Requests</span>
+          <span id="requestCount">0 shown</span>
+        </div>
+        <aside id="list" class="request-list"></aside>
+      </section>
+      <section class="monitor-panel" aria-labelledby="monitorTitle">
+        <div class="panel-titlebar monitor-titlebar">
+          <div>
+            <h1 id="monitorTitle">Session Monitor</h1>
+            <p id="requestSummary" class="request-summary">No request selected</p>
+          </div>
+        </div>
+        <section id="detail" class="detail-pane"><div class="empty">Select a request, or start chatting in Claude Code.</div></section>
+      </section>
     </main>
     <script src="/app.js"></script>
   </body>

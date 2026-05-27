@@ -159,6 +159,7 @@ function renderList() {
       return sc === "4xx" || sc === "5xx" || e.error != null;
     });
   }
+  renderRequestCount(visible.length);
   const grouped = groupRetries(visible);
   if (!grouped.length) {
     const hiddenNoise = state.hideNoise && state.entries.some((e) => isNoise(e));
@@ -200,6 +201,13 @@ function updateNoiseBtn() {
   const hidden = state.entries.filter((e) => isNoise(e)).length;
   btn.textContent = state.hideNoise ? `noise: hidden${hidden ? ` (${hidden})` : ""}` : "noise: shown";
   btn.classList.toggle("on", !state.hideNoise);
+}
+
+function renderRequestCount(count) {
+  const target = $("#requestCount");
+  if (!target) return;
+  const total = state.entries.length;
+  target.textContent = `${count} shown / ${total} total`;
 }
 
 function onPick(id) {
