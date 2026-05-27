@@ -97,6 +97,65 @@ button.on { background: var(--accent); color: #0e1116; border-color: var(--accen
   font-size: 12px;
 }
 .monitor-titlebar { min-height: 76px; }
+.monitor-titlebar > div:first-child {
+  flex: 0 0 250px;
+  min-width: 0;
+}
+.monitor-overview {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.overview-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+.overview-metrics {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+.overview-metric {
+  min-width: 64px;
+  max-width: 150px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.overview-metric span {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+.overview-metric b {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+}
+.overview-metric.metric-4xx b { color: var(--cache); }
+.overview-metric.metric-5xx b { color: var(--del); }
+.overview-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
 .session-picker {
   display: grid;
   gap: 6px;
@@ -312,4 +371,18 @@ a.dl { color: var(--accent); margin-right: 4px; }
     min-height: 0;
   }
   .app-subtitle { display: none; }
+  .monitor-titlebar {
+    flex-direction: column;
+  }
+  .monitor-titlebar > div:first-child {
+    flex: 0 0 auto;
+  }
+  .monitor-overview {
+    align-items: flex-start;
+    width: 100%;
+  }
+  .overview-metrics,
+  .overview-actions {
+    justify-content: flex-start;
+  }
 }

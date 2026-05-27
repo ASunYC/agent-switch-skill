@@ -78,6 +78,7 @@ async function loadList() {
     const pick = bestEntry(state.entries);
     state.selected = pick?.id ?? null;
     state.detail = null;
+    renderMonitorOverview();
     if (pick) loadDetail(pick.id, token);
     else renderEmptyDetail("No requests in this session yet.");
   }
@@ -218,6 +219,8 @@ function onPick(id) {
     return;
   }
   state.selected = id;
+  state.detail = null;
+  renderMonitorOverview();
   renderList();
   loadDetail(id, state.loadToken);
 }
@@ -234,14 +237,16 @@ async function loadDetail(id, token = state.loadToken) {
 function renderEmptyDetail(message = "Select a request, or start chatting in Claude Code.") {
   $("#detail").innerHTML = `<div class="empty">${esc(message)}</div>`;
   renderCurrentSummary();
+  renderMonitorOverview();
 }
 
-const TABS = ["overview", "flow", "system", "messages", "tools", "response", "headers"];
+const TABS = ["flow", "system", "messages", "tools", "response", "headers"];
 
 function renderDetail() {
   const rec = state.detail;
   if (!rec) return renderEmptyDetail();
   renderCurrentSummary();
+  renderMonitorOverview(rec);
   const d = $("#detail");
   d.innerHTML = "";
   const tabs = el("div", { className: "tabs" });
@@ -277,10 +282,41 @@ function renderCurrentSummary() {
   target.textContent = parts.join(" - ");
 }
 
+function renderMonitorOverview(rec = null) {
+  const target = $("#monitorOverview");
+  if (!target) return;
+  if (!rec) {
+    target.innerHTML = `<span class="overview-empty">No overview yet</span>`;
+    return;
+  }
+  const parsed = rec.parsed || {};
+  const c = parsed.cost || {};
+  const u = parsed.response?.usage || {};
+  const view = parsed.view || { messages: [], tools: [] };
+  const body = rec.request?.body || {};
+  const status = rec.response?.status ?? null;
+  const sc = statusClass(status);
+  const items = [
+    ["model", body.model || rec.model || "-"],
+    ["status", status != null ? "HTTP " + status : "-"],
+    ["ctx", `${view.messages.length} msg / ${view.tools.length} tools`],
+    ["input", fmt(u.input_tokens ?? parsed.estTokens)],
+    ["output", fmt(u.output_tokens)],
+    ["cache", fmt(c.cacheRead)],
+    ["cost", "$" + (c.usd || 0).toFixed(5)],
+    ["stop", parsed.response?.stop_reason || "-"],
+  ];
+  const metrics = items.map(([k, v]) => {
+    const cls = k === "status" && sc !== "ok" ? ` metric-${sc}` : "";
+    return `<div class="overview-metric${cls}"><span>${esc(k)}</span><b>${esc(v)}</b></div>`;
+  }).join("");
+  const dl = (f) => `<a class="dl" href="/api/export?id=${encodeURIComponent(rec.id)}&format=${f}">${f}</a>`;
+  target.innerHTML = `<div class="overview-metrics">${metrics}</div><div class="overview-actions"><span>Export</span>${dl("md")}${dl("json")}${dl("har")}${dl("raw")}</div>`;
+}
+
 function paneHtml(rec, tab) {
   const parsed = rec.parsed || {};
   const view = parsed.view || { system: [], messages: [], tools: [] };
-  if (tab === "overview") return overviewHtml(rec, parsed, view);
   if (tab === "flow") return flowHtml(rec);
   if (tab === "system") return blocksHtml(view.system);
   if (tab === "messages") return messagesHtml(view.messages);
@@ -288,48 +324,6 @@ function paneHtml(rec, tab) {
   if (tab === "response") return responseHtml(parsed.response);
   if (tab === "headers") return blockEl("headers", JSON.stringify(rec.request?.headers || {}, null, 2));
   return "";
-}
-
-function overviewHtml(rec, parsed, view) {
-  const c = parsed.cost || {};
-  const u = parsed.response?.usage || {};
-  const body = rec.request?.body || {};
-  const status = rec.response?.status ?? null;
-  const sc = statusClass(status);
-  const dl = (f) => `<a class="dl" href="/api/export?id=${encodeURIComponent(rec.id)}&format=${f}">download ${f}</a>`;
-  const statusCardCls = sc === "5xx" ? "err-card" : sc === "4xx" ? "warn-card" : "";
-  const statusCardVal = status != null ? "HTTP " + status : "-";
-  const errBody = parsed.response?.error ?? rec.response?.error ?? null;
-  const errHtml = errBody
-    ? `<div class="block" style="border-color:var(--del)"><div class="h" style="color:var(--del)">error</div><pre style="color:var(--del)">${esc(typeof errBody === "string" ? errBody : JSON.stringify(errBody, null, 2))}</pre></div>`
-    : "";
-  return `
-    <div class="overview-summary">${overviewSummary(rec, parsed, view)}</div>
-    <div class="cards">
-      ${statusCardCls ? card("status", statusCardVal, undefined, statusCardCls) : ""}
-      ${card("format", parsed.format || rec.format || "-")}
-      ${card("model", body.model || "-")}
-      ${card("est. input", "~" + fmt(parsed.estTokens), "tokens")}
-      ${card("actual input", fmt(u.input_tokens), "tokens")}
-      ${card("output", fmt(u.output_tokens), "tokens")}
-      ${card("cache read", fmt(c.cacheRead), (Math.round((c.cacheHitRate || 0) * 100)) + "% hit")}
-      ${card("cache write", fmt(c.cacheWrite), "tokens")}
-      ${card("cost", "$" + (c.usd || 0).toFixed(5))}
-      ${card("stop", parsed.response?.stop_reason || "-")}
-    </div>
-    ${errHtml}
-    <div class="export-bar"><span>Export</span>${dl("md")}${dl("json")}${dl("har")}${dl("raw")}</div>
-    <div class="block"><div class="h">request line</div><pre>${esc(rec.request?.method)} ${esc(rec.request?.url)}</pre></div>
-    <p style="color:var(--muted)">${view.system.length} system blocks / ${view.messages.length} messages / ${view.tools.length} tools</p>`;
-}
-
-function overviewSummary(rec, parsed, view) {
-  const body = rec.request?.body || {};
-  const status = rec.response?.status ?? null;
-  const statusText = status != null ? `HTTP ${status}` : "pending";
-  const model = body.model || rec.model || "unknown model";
-  const stop = parsed.response?.stop_reason ? ` and stopped with ${parsed.response.stop_reason}` : "";
-  return esc(`Request #${rec.seq || "?"} sent ${view.messages.length} messages to ${model}, offered ${view.tools.length} tools, returned ${statusText}${stop}.`);
 }
 
 function card(k, v, sub, cls = "") {
