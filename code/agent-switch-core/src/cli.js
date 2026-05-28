@@ -29,7 +29,9 @@ USAGE
   agent-switch kimi   [args...]      Inspect Kimi (Moonshot, via Claude Code)
   agent-switch opencode [args...]    Inspect OpenCode
   agent-switch run [--provider P] -- <cmd...>   Inspect any client
-  agent-switch view                  Open the dashboard over saved logs
+  agent-switch dashboard             Open the dashboard over saved logs
+  agent-switch webui                 Alias for dashboard
+  agent-switch view                  Alias for dashboard
   agent-switch migrate               Copy ./.agent-switch logs (this project only) to the global store
   agent-switch repack [session]      Re-pack stored captures into the deduped v2 format
   agent-switch rm <session>          Delete a session and reclaim its orphaned blobs
@@ -44,7 +46,8 @@ OPTIONS
   --port <n>          Dashboard port (default: auto)
   --proxy-port <n>    Proxy port (default: auto)
   --dir <path>        Log directory (default: ~/.agent-switch/sessions/<full-path>-<hash>)
-  --no-open           Do NOT open the dashboard in your browser (opens by default)
+  --open              Open the dashboard browser for this run
+  --no-open           Keep dashboard server headless (default for captured CLI runs)
   --no-redact         Do NOT mask auth tokens in saved logs
   --no-mcp            Do NOT inject agent-switch's inspection tools into Claude Code
   --no-settings-override   Do NOT force Claude Code onto the proxy via --settings
@@ -55,7 +58,8 @@ OPTIONS
   -v, --version       Show version
 
 EXAMPLES
-  agent-switch claude              # then chat in claude; watch http://127.0.0.1:<port>
+  agent-switch claude              # capture only; does not open a browser
+  agent-switch dashboard           # open the saved-log dashboard
   agent-switch codex
   agent-switch codex-azure         # set AZURE_OPENAI_ENDPOINT first
   agent-switch deepseek
@@ -67,7 +71,7 @@ EXAMPLES
   agent-switch export <id> --format raw > request.http`;
 
 function parseArgs(argv) {
-  const opts = { dir: null, redact: true, mcp: true, open: true, settingsOverride: true };
+  const opts = { dir: null, redact: true, mcp: true, open: null, settingsOverride: true };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -375,7 +379,7 @@ async function wrap(command, args, opts) {
   });
   child.on("exit", (code) => {
     process.stderr.write(`\n  \x1b[36m*\x1b[0m agent-switch: ${spawnCmd} exited. Logs saved to ${path.relative(process.cwd(), store.sessionDir)}\n`);
-    process.stderr.write(`    Re-open anytime with: agent-switch view\n`);
+    process.stderr.write(`    Open the dashboard anytime with: agent-switch dashboard\n`);
     shutdown(code ?? 0);
   });
 
@@ -392,7 +396,7 @@ async function view(opts) {
   const dashPort = await listen(dashboard, opts.port);
   const dashUrl = `http://127.0.0.1:${dashPort}`;
   process.stderr.write(`\n  \x1b[36m*\x1b[0m agent-switch dashboard: \x1b[1m${dashUrl}\x1b[0m  (viewing saved logs -Ctrl-C to stop)\n`);
-  if (opts.open) openBrowser(dashUrl);
+  if (opts.open !== false) openBrowser(dashUrl);
 }
 
 export { exportEntry, migrate, repack, rmCmd } from "./log-cli.js";
@@ -409,7 +413,7 @@ export async function main(argv) {
   if (rest.includes("-h") || rest.includes("--help")) return void process.stdout.write(HELP + "\n");
   if (rest.includes("-v") || rest.includes("--version")) return void process.stdout.write(VERSION + "\n");
 
-  if (cmd === "view") return view(opts);
+  if (cmd === "dashboard" || cmd === "webui" || cmd === "view") return view(opts);
   if (cmd === "migrate") return migrate(opts);
   if (cmd === "repack") { opts.session = rest[1]; return repack(opts); }
   if (cmd === "rm") return rmCmd(rest[1], opts);

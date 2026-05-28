@@ -16,7 +16,9 @@ The bundled code in `code/agent-switch-core` is the internal capture engine for 
 
 - `agent-switch <provider> [args...]`: run a coding CLI through agent-switch and print a Codex handoff summary when it exits.
 - `agent-switch run --provider openai -- <cmd...>`: wrap an arbitrary OpenAI-compatible CLI.
-- `agent-switch view`: open the saved-log dashboard.
+- `agent-switch dashboard`: open the saved-log dashboard.
+- `agent-switch webui`: alias for `dashboard`.
+- `agent-switch view`: backward-compatible alias for `dashboard`.
 - `agent-switch export <session>/<seq> --format raw|md|json|har`: export a captured request.
 - `agent-switch migrate`: copy legacy `./.agent-switch` project logs into the global store.
 - `agent-switch repack [session]`: force content-addressed v2 storage migration.

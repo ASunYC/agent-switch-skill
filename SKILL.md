@@ -63,6 +63,13 @@ agent-switch kimi
 agent-switch run --provider openai -- my-openai-compatible-cli
 ```
 
+Captured CLI runs do not open the dashboard automatically. Do not open a web page just because the user asked to use this skill, run `agent-switch claude`, or run another captured CLI. Only open the web UI when the user explicitly asks for the dashboard/webui, or when they run one of these commands:
+
+```bash
+agent-switch dashboard
+agent-switch webui
+```
+
 When the child CLI exits, `agent-switch` prints `agent-switch: returned to Codex` with the exit code, latest agent-switch session, captured request count, dashboard command, and latest export command. This terminal output is the handoff back to the current Codex session.
 
 ## Inspect Conversations
@@ -70,7 +77,8 @@ When the child CLI exits, `agent-switch` prints `agent-switch: returned to Codex
 Use the agent-switch dashboard and exports:
 
 ```bash
-agent-switch view
+agent-switch dashboard
+agent-switch webui
 agent-switch export <session>/<seq> --format md
 agent-switch export <session>/<seq> --format raw
 ```

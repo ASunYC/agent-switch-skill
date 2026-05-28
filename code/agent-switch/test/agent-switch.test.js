@@ -11,6 +11,8 @@ test("detects explicit capture directory", () => {
 test("prints handoff for provider runs only", () => {
   assert.equal(internals.shouldPrintHandoff(["claude"]), true);
   assert.equal(internals.shouldPrintHandoff(["run", "--provider", "openai", "--", "tool"]), true);
+  assert.equal(internals.shouldPrintHandoff(["dashboard"]), false);
+  assert.equal(internals.shouldPrintHandoff(["webui"]), false);
   assert.equal(internals.shouldPrintHandoff(["view"]), false);
   assert.equal(internals.shouldPrintHandoff(["export", "session/0001"]), false);
 });
@@ -24,4 +26,5 @@ test("renders an empty handoff without logs", () => {
   });
   assert.match(text, /returned to Codex/);
   assert.match(text, /captured requests: 0/);
+  assert.match(text, /agent-switch dashboard/);
 });

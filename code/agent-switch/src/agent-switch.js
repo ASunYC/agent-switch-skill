@@ -16,13 +16,18 @@ USAGE
   agent-switch deepseek [args...]     Start DeepSeek-TUI with conversation capture
   agent-switch kimi [args...]         Start Claude Code against Kimi/Moonshot
   agent-switch run --provider P -- <cmd...>
-  agent-switch view                   Re-open the dashboard over saved logs
+  agent-switch dashboard              Open the dashboard over saved logs
+  agent-switch webui                  Alias for dashboard
+  agent-switch view                   Alias for dashboard
   agent-switch install                Print install/update commands
 
 Commands such as export, migrate, repack, rm, proxy, --provider, --upstream,
---dir, --no-open, and --no-mcp are handled by agent-switch directly.`;
+--dir, --open, --no-open, and --no-mcp are handled by agent-switch directly.
 
-const PASS_THROUGH = new Set(["view", "migrate", "repack", "rm", "export", "proxy"]);
+Captured CLI runs do not open a browser by default. Use \`agent-switch dashboard\`
+or \`agent-switch webui\` when you want the web UI.`;
+
+const PASS_THROUGH = new Set(["dashboard", "webui", "view", "migrate", "repack", "rm", "export", "proxy"]);
 
 export async function main(argv, io = process) {
   if (!argv.length || argv.includes("-h") || argv.includes("--help")) {
@@ -64,6 +69,10 @@ Useful checks:
 Run a handoff:
 
   agent-switch claude
+
+Open the dashboard:
+
+  agent-switch dashboard
 
 `;
 }
@@ -122,7 +131,7 @@ function renderHandoff({ cwd, captureRoot, before, code }) {
   if (!after || !records.length) {
     lines.push("  captured requests: 0");
     lines.push("  note: no agent-switch request logs were found for this run.");
-    lines.push("  next: agent-switch view");
+    lines.push("  next: agent-switch dashboard");
     return `${lines.join("\n")}\n`;
   }
 
@@ -133,7 +142,7 @@ function renderHandoff({ cwd, captureRoot, before, code }) {
   lines.push(`  captured requests: ${records.length}${statusText ? ` (${statusText})` : ""}`);
   lines.push(`  latest request: ${summary.id}`);
   lines.push(`  latest model: ${summary.model || "unknown"}`);
-  lines.push(`  dashboard: agent-switch view`);
+  lines.push(`  dashboard: agent-switch dashboard`);
   lines.push(`  export latest: agent-switch export ${summary.id} --format md`);
   return `${lines.join("\n")}\n`;
 }

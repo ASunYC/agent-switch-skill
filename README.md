@@ -21,7 +21,7 @@ It helps you:
 - Install a ready-to-use `agent-switch` CLI from the skill directory
 - Start another coding CLI with one command, such as `agent-switch claude`
 - Capture prompts, tool calls, responses, status codes, and request metadata
-- Open a local dashboard over saved agent conversations
+- Open a local dashboard over saved agent conversations only when requested
 - Export captured requests as Markdown, raw HTTP, JSON, or HAR
 - Return a concise handoff summary back to the current Codex session
 - Run proxy-only mode for IDEs or custom OpenAI/Anthropic-compatible clients
@@ -170,7 +170,8 @@ agent-switch deepseek
 agent-switch kimi
 
 # Open the saved-log dashboard
-agent-switch view
+agent-switch dashboard
+agent-switch webui
 ```
 
 ### Run Another CLI
@@ -191,13 +192,14 @@ agent-switch run --provider claude -- my-anthropic-compatible-cli
 agent-switch run --upstream https://my.api/v1 --env-var MY_BASE_URL -- my-tool
 ```
 
-When the delegated CLI exits, Agent Switch prints a Codex handoff summary with the exit code, session id, captured request count, dashboard command, and latest export command.
+Captured CLI runs do not open a browser by default. When the delegated CLI exits, Agent Switch prints a Codex handoff summary with the exit code, session id, captured request count, dashboard command, and latest export command.
 
 ### Inspect Conversations
 
 ```bash
-# Re-open the dashboard over saved logs
-agent-switch view
+# Open the dashboard over saved logs
+agent-switch dashboard
+agent-switch webui
 
 # Export one captured request as Markdown
 agent-switch export <session>/<seq> --format md
@@ -238,7 +240,9 @@ agent-switch rm <session>
 | `kimi` | `agent-switch kimi` | Start Claude Code against Kimi / Moonshot |
 | `opencode` | `agent-switch opencode` | Start OpenCode with capture enabled |
 | `run` | `agent-switch run --provider openai -- my-cli` | Wrap an arbitrary compatible CLI |
-| `view` | `agent-switch view` | Open the dashboard over saved logs |
+| `dashboard` | `agent-switch dashboard` | Open the dashboard over saved logs |
+| `webui` | `agent-switch webui` | Alias for `dashboard` |
+| `view` | `agent-switch view` | Backward-compatible alias for `dashboard` |
 | `install` | `agent-switch install` | Print local install and update commands |
 
 ### Log and Proxy Commands
@@ -261,7 +265,8 @@ agent-switch rm <session>
 | `--port <n>` | Set the dashboard port |
 | `--proxy-port <n>` | Set the capture proxy port |
 | `--dir <path>` | Set the log directory |
-| `--no-open` | Do not open the dashboard automatically |
+| `--open` | Open the dashboard browser during a captured CLI run |
+| `--no-open` | Keep a dashboard command headless, useful for tests or remote shells |
 | `--no-redact` | Save auth headers without masking them |
 | `--no-mcp` | Do not inject Agent Switch MCP tools into Claude Code |
 | `--env-var <name>` | Override which environment variable receives the proxy URL |
@@ -384,7 +389,7 @@ Codex must send model traffic through an OpenAI-compatible base URL for capture.
 
 ### Where do captured conversations go?
 
-New captures are stored under `~/.agent-switch/sessions/<encoded-project-path>-<hash>/`. Use `agent-switch view` to browse them or `agent-switch export <id>` to export one request.
+New captures are stored under `~/.agent-switch/sessions/<encoded-project-path>-<hash>/`. Use `agent-switch dashboard` to browse them or `agent-switch export <id>` to export one request.
 
 ### Can I delete captured data?
 
