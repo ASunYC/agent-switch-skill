@@ -224,6 +224,30 @@ function settingsEnvBaseUrl(envVar) {
   return null;
 }
 
+function isLocalhostUrl(url) {
+  try {
+    const host = new URL(url).hostname;
+    return host === "127.0.0.1" || host === "localhost" || host === "::1";
+  } catch {
+    return false;
+  }
+}
+
+function diagnoseUpstreamFailure(store, upstream, provider) {
+  const bad = store.entries.find((rec) =>
+    rec.response?.status === 400 &&
+    String(rec.response?.raw || "").includes("Request body format invalid")
+  );
+  if (!bad || !isLocalhostUrl(upstream)) return;
+  process.stderr.write(
+    `\n  \x1b[33m!\x1b[0m  agent-switch: local upstream returned 400 Request body format invalid.\n` +
+    `     Upstream: ${upstream}\n` +
+    `     Source: ${provider.envVar} from Claude Code settings/env.\n` +
+    `     agent-switch captured and forwarded Claude's request; the local router rejected it.\n` +
+    `     If this is CC Switch, enable its smart routing/compatible route, or pass --upstream <compatible Anthropic API>.\n`
+  );
+}
+
 async function wrap(command, args, opts) {
   const provider = resolveProvider(command, opts.provider, opts.envVar);
   const claudeBased = provider.command === "claude";
@@ -378,6 +402,7 @@ async function wrap(command, args, opts) {
     shutdown(1);
   });
   child.on("exit", (code) => {
+    diagnoseUpstreamFailure(store, upstream, provider);
     process.stderr.write(`\n  \x1b[36m*\x1b[0m agent-switch: ${spawnCmd} exited. Logs saved to ${path.relative(process.cwd(), store.sessionDir)}\n`);
     process.stderr.write(`    Open the dashboard anytime with: agent-switch dashboard\n`);
     shutdown(code ?? 0);
