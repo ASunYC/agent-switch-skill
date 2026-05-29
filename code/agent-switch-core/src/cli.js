@@ -22,10 +22,11 @@ const VERSION = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.j
 const HELP = `agent-switch v${VERSION} - see what your coding agent sends to the model
 
 USAGE
-  agent-switch                       Pick a client interactively (claude / codex / deepseek / kimi)
+  agent-switch                       Pick a client interactively (claude / codex / codewhale / deepseek / kimi)
   agent-switch claude [args...]      Inspect Claude Code
   agent-switch codex  [args...]      Inspect Codex (OpenAI)
-  agent-switch deepseek [args...]    Inspect DeepSeek-TUI
+  agent-switch codewhale [args...]   Inspect CodeWhale
+  agent-switch deepseek [args...]    Inspect DeepSeek-TUI legacy shim
   agent-switch kimi   [args...]      Inspect Kimi (Moonshot, via Claude Code)
   agent-switch opencode [args...]    Inspect OpenCode
   agent-switch run [--provider P] -- <cmd...>   Inspect any client
@@ -39,7 +40,8 @@ USAGE
 
 OPTIONS
   --provider <p>      Force format/env for \`run\`
-                      Built-in: claude|codex|codex-azure|deepseek|kimi|openai|opencode
+                      Built-in: claude|codex|codex-azure|codewhale|codewhale-tui
+                              deepseek|deepseek-tui|kimi|openai|opencode
                               glm|ollama|lmstudio|openrouter|bedrock|vertex
   --upstream <url>    Override the upstream API (alias: --base-url)
   --base-url <url>    Alias for --upstream
@@ -61,6 +63,7 @@ EXAMPLES
   agent-switch claude              # capture only; does not open a browser
   agent-switch dashboard           # open the saved-log dashboard
   agent-switch codex
+  agent-switch codewhale
   agent-switch codex-azure         # set AZURE_OPENAI_ENDPOINT first
   agent-switch deepseek
   agent-switch run --provider ollama -- my-openai-cli
@@ -248,6 +251,45 @@ function diagnoseUpstreamFailure(store, upstream, provider) {
   );
 }
 
+function targetInstallHint(command, provider, requestedCommand = command) {
+  const key = String(command || "").toLowerCase();
+  if (key === "claude") {
+    const prefix = provider.label !== "Claude Code" ? `\n${provider.label} runs through Claude Code.\n` : "\n";
+    return prefix +
+      `Install Claude Code:\n` +
+      `  Windows: winget install Anthropic.ClaudeCode\n` +
+      `  Windows alternative: irm https://claude.ai/install.ps1 | iex\n` +
+      `  macOS/Linux: curl -fsSL https://claude.ai/install.sh | bash\n` +
+      `  macOS Homebrew: brew install --cask claude-code\n\n` +
+      `After installing, reopen your terminal and run:\n` +
+      `  claude\n` +
+      `  agent-switch ${requestedCommand || "claude"}\n`;
+  }
+  if (key === "codex") {
+    return `\nInstall the Codex CLI that provides the \`codex\` command, then reopen your terminal.\n\n` +
+      `After installing, verify with:\n` +
+      `  codex --help\n` +
+      `  agent-switch codex\n`;
+  }
+  if (key === "codewhale" || key === "codewhale-tui" || key === "deepseek" || key === "deepseek-tui") {
+    return `\nInstall CodeWhale, the renamed DeepSeek-TUI CLI. It provides the new \`codewhale\` command and may provide legacy shims for \`deepseek\` / \`deepseek-tui\` during the transition.\n\n` +
+      `Install CodeWhale:\n` +
+      `  npm install -g codewhale\n` +
+      `  cargo install codewhale-cli --locked\n` +
+      `  cargo install codewhale-tui --locked\n\n` +
+      `After installing, verify with:\n` +
+      `  codewhale doctor\n` +
+      `  agent-switch codewhale\n`;
+  }
+  if (key === "opencode") {
+    return `\nInstall the OpenCode CLI that provides the \`opencode\` command, then reopen your terminal.\n\n` +
+      `After installing, verify with:\n` +
+      `  opencode --help\n` +
+      `  agent-switch opencode\n`;
+  }
+  return `\nInstall '${command}' and make sure it is available in your PATH, then reopen your terminal.\n`;
+}
+
 async function wrap(command, args, opts) {
   const provider = resolveProvider(command, opts.provider, opts.envVar);
   const claudeBased = provider.command === "claude";
@@ -393,9 +435,7 @@ async function wrap(command, args, opts) {
   child.on("error", (e) => {
     if (e.code === "ENOENT") {
       process.stderr.write(`\nagent-switch: command not found: ${spawnCmd}\n`);
-      process.stderr.write(`  Make sure '${spawnCmd}' is installed and available in your PATH.\n`);
-      if (process.platform === "win32")
-        process.stderr.write(`  On Windows, try reinstalling it (e.g. npm install -g ${spawnCmd}) and reopen your terminal.\n`);
+      process.stderr.write(targetInstallHint(spawnCmd, provider, command));
     } else {
       process.stderr.write(`\nagent-switch: ${e.message}\n`);
     }

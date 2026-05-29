@@ -14,7 +14,7 @@
 
 ## Overview
 
-Agent Switch Skill packages the `agent-switch` command as an installable agent skill. It lets Codex, Claude Code, OpenCode, and other coding agents delegate work to another CLI while recording the model API traffic that passes through the local capture proxy.
+Agent Switch Skill packages the `agent-switch` command as an installable agent skill. It lets Codex, Claude Code, CodeWhale, OpenCode, and other coding agents delegate work to another CLI while recording the model API traffic that passes through the local capture proxy.
 
 It helps you:
 
@@ -63,7 +63,7 @@ The installer installs the bundled CLI package from `cli/`, verifies `agent-swit
 - **Conversation capture**: inspect model-facing requests and responses
 - **Dashboard**: browse saved logs in a local web UI
 - **Exports**: write captured requests as `raw`, `md`, `json`, or `har`
-- **Provider wrappers**: support Claude Code, Codex, DeepSeek-TUI, Kimi, OpenCode, and compatible gateways
+- **Provider wrappers**: support Claude Code, Codex, CodeWhale, DeepSeek-TUI legacy shims, Kimi, OpenCode, and compatible gateways
 - **Custom commands**: wrap arbitrary CLIs with `agent-switch run --provider <provider> -- <cmd...>`
 - **Storage migration**: move legacy project logs into the global store
 - **Session cleanup**: delete sessions and reclaim orphaned content blobs
@@ -163,7 +163,10 @@ agent-switch claude
 # Start Codex through agent-switch
 agent-switch codex
 
-# Start DeepSeek-TUI through agent-switch
+# Start CodeWhale through agent-switch
+agent-switch codewhale
+
+# Start DeepSeek-TUI legacy shim through agent-switch
 agent-switch deepseek
 
 # Start Claude Code against Kimi / Moonshot
@@ -181,6 +184,7 @@ Pass normal CLI arguments after the provider name:
 ```bash
 agent-switch claude --resume
 agent-switch codex --model gpt-5
+agent-switch codewhale
 agent-switch opencode
 ```
 
@@ -193,6 +197,51 @@ agent-switch run --upstream https://my.api/v1 --env-var MY_BASE_URL -- my-tool
 ```
 
 Captured CLI runs do not open a browser by default. When the delegated CLI exits, Agent Switch prints a Codex handoff summary with the exit code, session id, captured request count, dashboard command, and latest export command.
+
+### Missing Target CLI
+
+Agent Switch installs the capture command, but it does not silently install third-party coding CLIs. If the delegated CLI is missing, Agent Switch prints targeted install guidance.
+
+For Claude Code, install it first:
+
+```powershell
+# Windows
+winget install Anthropic.ClaudeCode
+
+# Windows alternative
+irm https://claude.ai/install.ps1 | iex
+```
+
+```bash
+# macOS / Linux
+curl -fsSL https://claude.ai/install.sh | bash
+
+# macOS Homebrew
+brew install --cask claude-code
+```
+
+Then reopen the terminal and verify:
+
+```bash
+claude
+agent-switch claude
+```
+
+For CodeWhale, install the renamed DeepSeek-TUI package:
+
+```bash
+npm install -g codewhale
+# or
+cargo install codewhale-cli --locked
+cargo install codewhale-tui --locked
+```
+
+Then verify:
+
+```bash
+codewhale doctor
+agent-switch codewhale
+```
 
 ### Inspect Conversations
 
@@ -236,7 +285,10 @@ agent-switch rm <session>
 |---|---|---|
 | `claude` | `agent-switch claude` | Start Claude Code with capture enabled |
 | `codex` | `agent-switch codex` | Start Codex with capture enabled |
-| `deepseek` | `agent-switch deepseek` | Start DeepSeek-TUI with capture enabled |
+| `codewhale` | `agent-switch codewhale` | Start CodeWhale with capture enabled |
+| `codewhale-tui` | `agent-switch codewhale-tui` | Start the CodeWhale TUI binary directly |
+| `deepseek` | `agent-switch deepseek` | Start the DeepSeek-TUI legacy shim with capture enabled |
+| `deepseek-tui` | `agent-switch deepseek-tui` | Start the DeepSeek-TUI legacy runtime shim directly |
 | `kimi` | `agent-switch kimi` | Start Claude Code against Kimi / Moonshot |
 | `opencode` | `agent-switch opencode` | Start OpenCode with capture enabled |
 | `run` | `agent-switch run --provider openai -- my-cli` | Wrap an arbitrary compatible CLI |
@@ -278,7 +330,10 @@ Built-in provider recipes include:
 - `claude`
 - `codex`
 - `codex-azure`
+- `codewhale`
+- `codewhale-tui`
 - `deepseek`
+- `deepseek-tui`
 - `kimi`
 - `openai`
 - `opencode`

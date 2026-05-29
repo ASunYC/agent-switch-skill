@@ -27,21 +27,37 @@ export const PROVIDERS = {
     autoUpstream: true,
     note: "Codex Azure: set AZURE_OPENAI_ENDPOINT to your Azure OpenAI endpoint and AZURE_OPENAI_API_KEY to your key.",
   },
+  codewhale: {
+    label: "CodeWhale",
+    command: "codewhale",
+    format: "openai",
+    envVar: "DEEPSEEK_BASE_URL",
+    upstream: "https://api.deepseek.com",
+    note: "CodeWhale uses OpenAI-compatible Chat Completions. Make sure your DeepSeek key is set (DEEPSEEK_API_KEY).",
+  },
+  "codewhale-tui": {
+    label: "CodeWhale TUI",
+    command: "codewhale-tui",
+    format: "openai",
+    envVar: "DEEPSEEK_BASE_URL",
+    upstream: "https://api.deepseek.com",
+    note: "CodeWhale uses OpenAI-compatible Chat Completions. Make sure your DeepSeek key is set (DEEPSEEK_API_KEY).",
+  },
   deepseek: {
-    label: "DeepSeek-TUI",
+    label: "CodeWhale (legacy deepseek)",
     command: "deepseek",
     format: "openai",
     envVar: "DEEPSEEK_BASE_URL",
     upstream: "https://api.deepseek.com",
-    note: "DeepSeek-TUI uses OpenAI-compatible Chat Completions. Make sure your DeepSeek key is set (DEEPSEEK_API_KEY).",
+    note: "DeepSeek-TUI was renamed to CodeWhale. This legacy command is kept while upstream shims exist; make sure your DeepSeek key is set (DEEPSEEK_API_KEY).",
   },
   "deepseek-tui": {
-    label: "DeepSeek-TUI",
+    label: "CodeWhale TUI (legacy deepseek-tui)",
     command: "deepseek-tui",
     format: "openai",
     envVar: "DEEPSEEK_BASE_URL",
     upstream: "https://api.deepseek.com",
-    note: "DeepSeek-TUI uses OpenAI-compatible Chat Completions. Make sure your DeepSeek key is set (DEEPSEEK_API_KEY).",
+    note: "DeepSeek-TUI was renamed to CodeWhale. This legacy command is kept while upstream shims exist; make sure your DeepSeek key is set (DEEPSEEK_API_KEY).",
   },
   kimi: {
     label: "Kimi (Moonshot, via Claude Code)",
@@ -126,7 +142,7 @@ export const PROVIDERS = {
   },
 };
 
-export const PICKABLE = ["claude", "codex", "deepseek", "kimi", "opencode"]; // shown in the no-arg picker
+export const PICKABLE = ["claude", "codex", "codewhale", "deepseek", "kimi", "opencode"]; // shown in the no-arg picker
 
 // Resolve a provider from a CLI token (e.g. "claude"), falling back to a custom
 // command wrapped under an explicit --provider.

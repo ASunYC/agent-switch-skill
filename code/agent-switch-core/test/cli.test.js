@@ -79,6 +79,28 @@ test("claude uses ANTHROPIC_BASE_URL env var as upstream (invalid URL triggers c
   assert.match(stderr, /ANTHROPIC_BASE_URL/);
 });
 
+test("missing Claude Code prints official install guidance", async () => {
+  const { code, stderr } = await run(["claude", "--no-mcp"], { PATH: "", Path: "" });
+
+  assert.equal(code, 1);
+  assert.match(stderr, /command not found: claude/);
+  assert.match(stderr, /winget install Anthropic\.ClaudeCode/);
+  assert.match(stderr, /https:\/\/claude\.ai\/install\.ps1/);
+  assert.match(stderr, /https:\/\/claude\.ai\/install\.sh/);
+  assert.match(stderr, /agent-switch claude/);
+});
+
+test("missing CodeWhale prints renamed CLI install guidance", async () => {
+  const { code, stderr } = await run(["codewhale"], { PATH: "", Path: "" });
+
+  assert.equal(code, 1);
+  assert.match(stderr, /command not found: codewhale/);
+  assert.match(stderr, /renamed DeepSeek-TUI CLI/);
+  assert.match(stderr, /npm install -g codewhale/);
+  assert.match(stderr, /codewhale doctor/);
+  assert.match(stderr, /agent-switch codewhale/);
+});
+
 test("--version flag prints version and exits 0", async () => {
   const { code, stdout } = await run(["--version"]);
 

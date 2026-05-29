@@ -6,7 +6,8 @@ The bundled code in `code/agent-switch-core` is the internal capture engine for 
 
 - `claude`: Claude Code through `ANTHROPIC_BASE_URL`, Anthropic Messages format, optional agent-switch MCP self-inspection.
 - `codex`: Codex through `OPENAI_BASE_URL`, OpenAI Responses / Chat format. API-key mode is required; ChatGPT-login WebSocket mode bypasses base URL capture.
-- `deepseek` and `deepseek-tui`: DeepSeek-TUI through `DEEPSEEK_BASE_URL`, OpenAI-compatible Chat format.
+- `codewhale` and `codewhale-tui`: CodeWhale through `DEEPSEEK_BASE_URL`, OpenAI-compatible Chat format.
+- `deepseek` and `deepseek-tui`: legacy DeepSeek-TUI compatibility shims retained while CodeWhale upstream still ships them.
 - `kimi`: Claude Code pointed at Moonshot's Anthropic-compatible endpoint.
 - `opencode`: OpenCode through `OPENAI_BASE_URL`, upstream auto-detected from the current environment.
 - `ollama`, `lmstudio`, `openrouter`, `glm`, `bedrock`, `vertex`: built-in provider recipes.

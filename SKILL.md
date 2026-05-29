@@ -58,10 +58,13 @@ Pass arguments through normally:
 ```bash
 agent-switch claude --resume
 agent-switch codex
+agent-switch codewhale
 agent-switch deepseek
 agent-switch kimi
 agent-switch run --provider openai -- my-openai-compatible-cli
 ```
+
+Use `agent-switch codewhale` for CodeWhale, formerly DeepSeek-TUI. Keep supporting `agent-switch deepseek` and `agent-switch deepseek-tui` as legacy compatibility aliases while upstream still ships those shims.
 
 Captured CLI runs do not open the dashboard automatically. Do not open a web page just because the user asked to use this skill, run `agent-switch claude`, or run another captured CLI. Only open the web UI when the user explicitly asks for the dashboard/webui, or when they run one of these commands:
 
@@ -71,6 +74,37 @@ agent-switch webui
 ```
 
 When the child CLI exits, `agent-switch` prints `agent-switch: returned to Codex` with the exit code, latest agent-switch session, captured request count, dashboard command, and latest export command. This terminal output is the handoff back to the current Codex session.
+
+## Missing Target CLI
+
+`agent-switch` installs and runs the capture tooling only. It does not silently install third-party coding CLIs such as Claude Code, Codex, CodeWhale, DeepSeek-TUI, or OpenCode.
+
+If a delegated command is missing, read the CLI error and guide the user to install the target CLI first. For Claude Code, use the official install commands shown by `agent-switch`:
+
+```powershell
+winget install Anthropic.ClaudeCode
+irm https://claude.ai/install.ps1 | iex
+```
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+brew install --cask claude-code
+```
+
+After installing a target CLI, ask the user to reopen the terminal, verify the command directly, and retry through Agent Switch:
+
+```bash
+claude
+agent-switch claude
+```
+
+For CodeWhale, the renamed DeepSeek-TUI package, guide users to install and verify:
+
+```bash
+npm install -g codewhale
+codewhale doctor
+agent-switch codewhale
+```
 
 ## Inspect Conversations
 

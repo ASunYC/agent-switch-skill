@@ -13,7 +13,8 @@ const HELP = `agent-switch - run another coding CLI with model-conversation capt
 USAGE
   agent-switch claude [args...]       Start Claude Code with conversation capture
   agent-switch codex [args...]        Start Codex with conversation capture
-  agent-switch deepseek [args...]     Start DeepSeek-TUI with conversation capture
+  agent-switch codewhale [args...]    Start CodeWhale with conversation capture
+  agent-switch deepseek [args...]     Start DeepSeek-TUI legacy shim with conversation capture
   agent-switch kimi [args...]         Start Claude Code against Kimi/Moonshot
   agent-switch run --provider P -- <cmd...>
   agent-switch dashboard              Open the dashboard over saved logs
@@ -56,11 +57,11 @@ export async function main(argv, io = process) {
 function installText() {
   return `Install from the skill directory:
 
-  npm install -g .
+  node scripts/install-agent-switch.js
 
-Update after editing the skill:
+Or install the bundled package directly:
 
-  npm install -g .
+  npm install -g cli/agent-switch-skill-0.1.0.tgz
 
 Useful checks:
 
@@ -69,6 +70,16 @@ Useful checks:
 Run a handoff:
 
   agent-switch claude
+
+If the target CLI is missing, install it first. For Claude Code:
+
+  winget install Anthropic.ClaudeCode
+  irm https://claude.ai/install.ps1 | iex
+
+For CodeWhale:
+
+  npm install -g codewhale
+  codewhale doctor
 
 Open the dashboard:
 
