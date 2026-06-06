@@ -6,6 +6,7 @@ import readline from "node:readline";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
+import net from "node:net";
 import { fileURLToPath } from "node:url";
 import { proxyArgs } from "./child-args.js";
 import { spawnCommand } from "./spawn-command.js";
@@ -236,6 +237,41 @@ function isLocalhostUrl(url) {
   }
 }
 
+function checkLocalUpstream(upstream, timeoutMs = 1200) {
+  if (!isLocalhostUrl(upstream)) return Promise.resolve(null);
+  let url;
+  try {
+    url = new URL(upstream);
+  } catch {
+    return Promise.resolve(null);
+  }
+  const port = Number(url.port || (url.protocol === "https:" ? 443 : 80));
+  const host = url.hostname.replace(/^\[(.*)\]$/, "$1");
+  return new Promise((resolve) => {
+    const socket = net.connect({ host, port });
+    let settled = false;
+    const finish = (message) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(message);
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once("connect", () => finish(null));
+    socket.once("timeout", () => finish(`connection timed out after ${timeoutMs}ms`));
+    socket.once("error", (e) => finish(e.message));
+  });
+}
+
+function localUpstreamHint(upstream, provider) {
+  return (
+    `agent-switch: local upstream is not reachable: ${upstream}\n` +
+    `  ${provider.envVar} points there, but no service accepted the connection.\n` +
+    `  If this is CC Switch, start or restart CC Switch and make sure it listens on this port.\n` +
+    `  Or pass a working upstream explicitly: agent-switch claude --upstream <url>\n`
+  );
+}
+
 function diagnoseUpstreamFailure(store, upstream, provider) {
   const bad = store.entries.find((rec) =>
     rec.response?.status === 400 &&
@@ -354,6 +390,13 @@ async function wrap(command, args, opts) {
       `  The URL must start with http:// or https://, e.g. https://api.openai.com\n` +
       `  Check the value of ${provider.envVar} in your environment, or pass --upstream <url>.\n`
     );
+    process.exit(1);
+  }
+
+  const localUpstreamError = await checkLocalUpstream(upstream);
+  if (localUpstreamError) {
+    process.stderr.write(localUpstreamHint(upstream, provider));
+    process.stderr.write(`  connection error: ${localUpstreamError}\n`);
     process.exit(1);
   }
 

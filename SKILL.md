@@ -106,6 +106,22 @@ codewhale doctor
 agent-switch codewhale
 ```
 
+## Local Upstream Troubleshooting
+
+If `agent-switch claude` reports that the local upstream is not reachable, Claude Code is configured to use a local router such as CC Switch, but that service is not listening on the configured port.
+
+Check the configured base URL in Claude Code settings or the environment:
+
+```bash
+ANTHROPIC_BASE_URL
+```
+
+For CC Switch, start or restart CC Switch and verify that its local port is healthy. If the router moved to another port, update Claude Code settings or run with an explicit upstream:
+
+```bash
+agent-switch claude --upstream http://127.0.0.1:<port>
+```
+
 ## Inspect Conversations
 
 Use the agent-switch dashboard and exports:

@@ -79,8 +79,22 @@ test("claude uses ANTHROPIC_BASE_URL env var as upstream (invalid URL triggers c
   assert.match(stderr, /ANTHROPIC_BASE_URL/);
 });
 
+test("claude fails fast when a local upstream is not listening", async () => {
+  const { code, stderr } = await run(["claude", "--no-mcp"], { ANTHROPIC_BASE_URL: "http://127.0.0.1:9" });
+
+  assert.equal(code, 1);
+  assert.match(stderr, /local upstream is not reachable/);
+  assert.match(stderr, /127\.0\.0\.1:9/);
+  assert.match(stderr, /CC Switch/);
+  assert.doesNotMatch(stderr, /command not found: claude/);
+});
+
 test("missing Claude Code prints official install guidance", async () => {
-  const { code, stderr } = await run(["claude", "--no-mcp"], { PATH: "", Path: "" });
+  const { code, stderr } = await run(["claude", "--no-mcp"], {
+    PATH: "",
+    Path: "",
+    ANTHROPIC_BASE_URL: "https://api.anthropic.com",
+  });
 
   assert.equal(code, 1);
   assert.match(stderr, /command not found: claude/);
