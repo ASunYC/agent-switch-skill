@@ -189,6 +189,14 @@ function renderList() {
       el("span", { className: "time", textContent: e.ts ? new Date(e.ts).toLocaleTimeString() : "" }));
     if (isNoise(e)) sub.append(el("span", { className: "noise-badge", textContent: " probe" }));
     if (e.nToolUse) sub.append(el("span", { className: "toolcalls", title: "tool calls in this request", textContent: ` tool calls:${e.nToolUse}` }));
+    if (e.compact?.enabled) {
+      const label = e.compact.compressed
+        ? ` compact ${compactSavedLabel(e.compact)}`
+        : e.compact.failedOpen
+          ? " compact failed-open"
+          : " compact skipped";
+      sub.append(el("span", { className: "compact-badge", title: e.compact.error || "Headroom compact", textContent: label }));
+    }
     if (e.retries.length) sub.append(el("span", { className: "retry-badge", textContent: ` retried x${e.retries.length}` }));
     row.append(top, meta, sub);
     row.onclick = () => onPick(e.id);
@@ -240,7 +248,7 @@ function renderEmptyDetail(message = "Select a request, or start chatting in Cla
   renderMonitorOverview();
 }
 
-const TABS = ["flow", "system", "messages", "tools", "response", "headers"];
+const TABS = ["flow", "original", "forwarded", "compression", "system", "messages", "tools", "response", "headers"];
 
 function renderDetail() {
   const rec = state.detail;
@@ -279,6 +287,7 @@ function renderCurrentSummary() {
   ];
   const cost = state.detail?.id === entry.id ? state.detail?.parsed?.cost?.usd : null;
   if (cost != null) parts.push("$" + cost.toFixed(5));
+  if (entry.compact?.enabled) parts.push(entry.compact.compressed ? `compact ${compactSavedLabel(entry.compact)}` : entry.compact.failedOpen ? "compact failed-open" : "compact skipped");
   target.textContent = parts.join(" - ");
 }
 
@@ -304,6 +313,7 @@ function renderMonitorOverview(rec = null) {
     ["output", fmt(u.output_tokens)],
     ["cache", fmt(c.cacheRead)],
     ["cost", "$" + (c.usd || 0).toFixed(5)],
+    ["compact", compactSummary(rec)],
     ["stop", parsed.response?.stop_reason || "-"],
   ];
   const metrics = items.map(([k, v]) => {
@@ -318,6 +328,9 @@ function paneHtml(rec, tab) {
   const parsed = rec.parsed || {};
   const view = parsed.view || { system: [], messages: [], tools: [] };
   if (tab === "flow") return flowHtml(rec);
+  if (tab === "original") return blockEl("original request body", JSON.stringify(rec.request?.body || null, null, 2));
+  if (tab === "forwarded") return forwardedHtml(rec);
+  if (tab === "compression") return compressionHtml(rec);
   if (tab === "system") return blocksHtml(view.system);
   if (tab === "messages") return messagesHtml(view.messages);
   if (tab === "tools") return toolsHtml(view.tools);
@@ -535,6 +548,40 @@ function connectStream() {
       if (s.id === state.selected) loadDetail(s.id, state.loadToken);
     };
   } catch {}
+}
+
+function compactSavedLabel(compact) {
+  if (compact.tokensSaved != null) return `${fmt(compact.tokensSaved)} saved`;
+  if (compact.ratio != null) return `${Math.round((1 - compact.ratio) * 100)}% saved`;
+  return "saved";
+}
+
+function compactSummary(rec) {
+  const c = rec.compression || rec.compact;
+  if (!c?.enabled) return "off";
+  if (c.compressed) return compactSavedLabel(c);
+  if (c.failedOpen) return "failed-open";
+  if (c.error) return "skipped";
+  return "on";
+}
+
+function forwardedHtml(rec) {
+  if (!rec.forwarded) return `<p style="color:var(--muted)">same as original request</p>`;
+  const parsed = rec.parsed?.forwarded;
+  const body = blockEl("forwarded request body", JSON.stringify(rec.forwarded.body || null, null, 2));
+  if (!parsed?.view) return body;
+  return [
+    blockEl("forwarded token estimate", String(parsed.estTokens ?? "-")),
+    blocksHtml(parsed.view.system || []),
+    messagesHtml(parsed.view.messages || []),
+    toolsHtml(parsed.view.tools || []),
+    body,
+  ].join("");
+}
+
+function compressionHtml(rec) {
+  const c = rec.compression || { enabled: false };
+  return blockEl("compression", JSON.stringify(c, null, 2));
 }
 
 $("#session").onchange = (e) => {

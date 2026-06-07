@@ -198,6 +198,41 @@ agent-switch run --upstream https://my.api/v1 --env-var MY_BASE_URL -- my-tool
 
 Captured CLI runs do not open a browser by default. When the delegated CLI exits, Agent Switch prints a Codex handoff summary with the exit code, session id, captured request count, dashboard command, and latest export command.
 
+### Headroom Compact
+
+Compact mode is off by default. Normal captured runs stay transparent and forward Claude Code requests unchanged.
+
+Enable compact mode explicitly for Claude Code based providers:
+
+```bash
+agent-switch claude --compact
+agent-switch kimi --compact
+agent-switch bedrock --compact
+agent-switch vertex --compact
+```
+
+Compact mode uses the bundled `headroom-ai` JavaScript SDK against an external Headroom proxy. Install and start Headroom separately:
+
+```bash
+pip install "headroom-ai[proxy]"
+headroom proxy
+agent-switch compact doctor
+```
+
+By default, compact mode is fail-open. If Headroom is unavailable, Agent Switch records the failure and forwards the original Claude request:
+
+```bash
+agent-switch claude --compact --compact-fail open
+```
+
+Use fail-closed only when you prefer stopping the request over sending uncompressed context:
+
+```bash
+agent-switch claude --compact --compact-fail closed
+```
+
+The dashboard stores and displays both views: the original request captured from Claude Code and the forwarded request sent upstream after compression. RTK is not initialized by compact v1; command-output compression can be evaluated separately later.
+
 ### Missing Target CLI
 
 Agent Switch installs the capture command, but it does not silently install third-party coding CLIs. If the delegated CLI is missing, Agent Switch prints targeted install guidance.

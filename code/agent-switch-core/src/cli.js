@@ -1,7 +1,7 @@
 // CLI orchestration: resolve which client to inspect, start proxy + dashboard,
 // spawn the client with its base-URL env var pointed at the proxy, clean up.
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import readline from "node:readline";
 import path from "node:path";
 import fs from "node:fs";
@@ -16,6 +16,7 @@ import { createProxy } from "./proxy.js";
 import { createServer } from "./server.js";
 import { resolveProvider, PROVIDERS, PICKABLE } from "./providers.js";
 import { globalRoot, legacyRoot, readRoots } from "./paths.js";
+import { checkHeadroomProxy, checkHeadroomSdk, DEFAULT_COMPACT, isClaudeCompactProvider } from "./compact.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const VERSION = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8")).version;
@@ -38,6 +39,8 @@ USAGE
   agent-switch repack [session]      Re-pack stored captures into the deduped v2 format
   agent-switch rm <session>          Delete a session and reclaim its orphaned blobs
   agent-switch export <id> [--format raw|md|json|har]
+  agent-switch compact doctor      Check Headroom compact dependencies
+  agent-switch compact install     Print Headroom install commands
 
 OPTIONS
   --provider <p>      Force format/env for \`run\`
@@ -57,11 +60,19 @@ OPTIONS
                            (use if a provider switcher set ANTHROPIC_BASE_URL)
   --env-var <name>    Override the environment variable used to set the proxy URL
                            (default depends on provider, e.g. ANTHROPIC_BASE_URL)
+  --compact           Enable Headroom request compression for Claude Code providers
+  --compact-engine <e>  Compact engine (v1: headroom)
+  --compact-base-url <url>
+                      Headroom proxy URL (default: ${DEFAULT_COMPACT.baseUrl})
+  --compact-fail <mode>
+                      open|closed (default: open; open forwards original request on failure)
   -h, --help          Show this help
   -v, --version       Show version
 
 EXAMPLES
   agent-switch claude              # capture only; does not open a browser
+  agent-switch claude --compact    # compress older Claude context through Headroom
+  agent-switch compact doctor
   agent-switch dashboard           # open the saved-log dashboard
   agent-switch codex
   agent-switch codewhale
@@ -75,7 +86,14 @@ EXAMPLES
   agent-switch export <id> --format raw > request.http`;
 
 function parseArgs(argv) {
-  const opts = { dir: null, redact: true, mcp: true, open: null, settingsOverride: true };
+  const opts = {
+    dir: null,
+    redact: true,
+    mcp: true,
+    open: null,
+    settingsOverride: true,
+    compact: { ...DEFAULT_COMPACT },
+  };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -90,6 +108,10 @@ function parseArgs(argv) {
     else if (a === "--no-mcp") opts.mcp = false;
     else if (a === "--no-settings-override") opts.settingsOverride = false;
     else if (a === "--env-var") opts.envVar = argv[++i];
+    else if (a === "--compact") opts.compact.enabled = true;
+    else if (a === "--compact-engine") opts.compact.engine = argv[++i];
+    else if (a === "--compact-base-url") opts.compact.baseUrl = argv[++i];
+    else if (a === "--compact-fail") opts.compact.fail = argv[++i];
     else if (a === "--format") opts.format = argv[++i];
     else rest.push(a);
   }
@@ -228,6 +250,57 @@ function settingsEnvBaseUrl(envVar) {
   return null;
 }
 
+function headroomCommand() {
+  return "headroom";
+}
+
+function checkHeadroomCli() {
+  const result = spawnSync(headroomCommand(), ["--version"], {
+    encoding: "utf8",
+    shell: false,
+  });
+  if (result.error) {
+    if (result.error.code === "ENOENT") {
+      return { ok: false, error: "headroom CLI was not found in PATH" };
+    }
+    return { ok: false, error: result.error.message };
+  }
+  if ((result.status ?? 1) !== 0) return { ok: false, error: (result.stderr || result.stdout || "").trim() || `exit ${result.status}` };
+  return { ok: true, version: (result.stdout || result.stderr || "").trim() };
+}
+
+async function compactCmd(args, opts) {
+  const sub = args[0];
+  if (sub === "install") {
+    process.stdout.write(
+      "agent-switch compact uses external Headroom. Install and start it separately:\n\n" +
+      "  pip install \"headroom-ai[proxy]\"\n" +
+      "  headroom proxy\n\n" +
+      "The agent-switch package includes the Headroom JavaScript SDK dependency when built from this repository.\n" +
+      "RTK is intentionally not initialized by agent-switch compact v1.\n"
+    );
+    return;
+  }
+  if (sub !== "doctor") {
+    process.stdout.write("Usage: agent-switch compact doctor|install [--compact-base-url <url>]\n");
+    return;
+  }
+  const cli = checkHeadroomCli();
+  const sdk = await checkHeadroomSdk();
+  const proxy = await checkHeadroomProxy(opts.compact.baseUrl);
+  const line = (name, r) => `${r.ok ? "ok" : "fail"} ${name}${r.version ? ` ${r.version}` : ""}${r.status ? ` HTTP ${r.status}` : ""}${r.error ? ` - ${r.error}` : ""}`;
+  process.stdout.write(
+    [
+      `Headroom compact doctor (${opts.compact.baseUrl})`,
+      line("headroom CLI", cli),
+      line("headroom-ai SDK", sdk),
+      line("Headroom proxy", proxy),
+      "",
+      "If the proxy check fails, run: headroom proxy",
+    ].join("\n") + "\n"
+  );
+}
+
 function isLocalhostUrl(url) {
   try {
     const host = new URL(url).hostname;
@@ -329,6 +402,21 @@ function targetInstallHint(command, provider, requestedCommand = command) {
 async function wrap(command, args, opts) {
   const provider = resolveProvider(command, opts.provider, opts.envVar);
   const claudeBased = provider.command === "claude";
+  if (opts.compact.enabled) {
+    if (opts.compact.engine !== "headroom") {
+      process.stderr.write(`agent-switch: unsupported compact engine "${opts.compact.engine}" (v1 supports: headroom)\n`);
+      process.exit(1);
+    }
+    if (!["open", "closed"].includes(opts.compact.fail)) {
+      process.stderr.write(`agent-switch: invalid --compact-fail "${opts.compact.fail}" (use open or closed)\n`);
+      process.exit(1);
+    }
+    if (!isClaudeCompactProvider(provider)) {
+      process.stderr.write("agent-switch: --compact is only supported for Claude Code based providers in v1.\n");
+      process.stderr.write("  Supported: claude, kimi, bedrock, vertex.\n");
+      process.exit(1);
+    }
+  }
 
   // Detect Codex ChatGPT-auth / websocket mode early so we can warn the user
   // before opening the (otherwise empty) dashboard.
@@ -405,7 +493,7 @@ async function wrap(command, args, opts) {
   maybeLegacyHint(process.cwd(), opts.dir);
 
   const store = new Store({ root: opts.dir, redact: opts.redact, format: provider.format });
-  const proxy = createProxy({ upstream, store });
+  const proxy = createProxy({ upstream, store, compact: opts.compact });
   const dashboard = createServer({ roots: opts.readRoots, store });
 
   const proxyPort = await listen(proxy, opts.proxyPort);
@@ -522,6 +610,7 @@ export async function main(argv) {
   if (rest.includes("-v") || rest.includes("--version")) return void process.stdout.write(VERSION + "\n");
 
   if (cmd === "dashboard" || cmd === "webui" || cmd === "view") return view(opts);
+  if (cmd === "compact") return compactCmd(rest.slice(1), opts);
   if (cmd === "migrate") return migrate(opts);
   if (cmd === "repack") { opts.session = rest[1]; return repack(opts); }
   if (cmd === "rm") return rmCmd(rest[1], opts);

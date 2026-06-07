@@ -4,15 +4,17 @@
 
 import http from "node:http";
 import https from "node:https";
+import { compactAnthropicBody, normalizeCompactOptions } from "./compact.js";
 
-export function createProxy({ upstream, store }) {
+export function createProxy({ upstream, store, compact }) {
   const up = new URL(upstream);
   const client = up.protocol === "http:" ? http : https;
+  const compactOpts = normalizeCompactOptions(compact);
 
   return http.createServer((req, res) => {
     const chunks = [];
     req.on("data", (c) => chunks.push(c));
-    req.on("end", () => {
+    req.on("end", async () => {
       const bodyBuf = Buffer.concat(chunks);
       let body;
       try {
@@ -30,10 +32,52 @@ export function createProxy({ upstream, store }) {
         },
       });
 
+      let outboundBody = body;
+      let outboundBuf = bodyBuf;
+      let compression = compactOpts.enabled
+        ? { enabled: true, engine: compactOpts.engine, baseUrl: compactOpts.baseUrl, compressed: false }
+        : null;
+      try {
+        if (compactOpts.enabled && req.method === "POST" && body && typeof body === "object" && !Array.isArray(body)) {
+          const result = await compactAnthropicBody(body, compactOpts);
+          outboundBody = result.body;
+          compression = result.meta;
+          outboundBuf = compression.compressed ? Buffer.from(JSON.stringify(outboundBody)) : bodyBuf;
+          rec.forwarded = {
+            method: req.method,
+            url: req.url,
+            headers: { ...req.headers },
+            body: outboundBody,
+          };
+          rec.compression = compression;
+          store.update(rec);
+        } else if (compactOpts.enabled) {
+          compression = {
+            ...compression,
+            error: "request is not a JSON POST body",
+            failedOpen: compactOpts.fail === "open",
+          };
+          rec.compression = compression;
+          store.update(rec);
+        }
+      } catch (e) {
+        rec.compression = {
+          ...compression,
+          error: e.message,
+          failedOpen: false,
+        };
+        store.update(rec);
+        if (!res.headersSent) res.writeHead(502, { "content-type": "text/plain" });
+        return res.end(`agent-switch: compact failed: ${e.message}`);
+      }
+
       // Forward upstream. Strip accept-encoding so the captured response is
       // plain text (no gzip/br to decode) -Claude Code handles uncompressed fine.
       const headers = { ...req.headers, host: up.host };
       delete headers["accept-encoding"];
+      if (compactOpts.enabled && outboundBuf !== bodyBuf) {
+        headers["content-length"] = String(outboundBuf.length);
+      }
 
       const proxyReq = client.request(
         {
@@ -71,7 +115,7 @@ export function createProxy({ upstream, store }) {
         store.update(rec);
       });
 
-      proxyReq.end(bodyBuf);
+      proxyReq.end(outboundBuf);
     });
   });
 }

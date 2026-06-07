@@ -61,6 +61,7 @@ export class Store extends EventEmitter {
   }
 
   update(rec) {
+    if (rec.forwarded?.headers) rec.forwarded.headers = this._maskHeaders(rec.forwarded.headers);
     this._persist(rec);
     this.emit("update", rec);
   }
@@ -109,6 +110,14 @@ export function summarize(rec) {
     status: rec.response?.status ?? null,
     error: rec.response?.error ?? null,
     pending: !rec.response,
+    compact: rec.compression ? {
+      enabled: Boolean(rec.compression.enabled),
+      compressed: Boolean(rec.compression.compressed),
+      failedOpen: Boolean(rec.compression.failedOpen),
+      tokensSaved: rec.compression.tokensSaved ?? null,
+      ratio: rec.compression.ratio ?? null,
+      error: rec.compression.error ?? null,
+    } : null,
   };
 }
 

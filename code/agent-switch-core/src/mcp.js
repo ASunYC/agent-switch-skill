@@ -124,4 +124,53 @@ server.registerTool(
   },
 );
 
+server.registerTool(
+  "compression_detail",
+  {
+    title: "Compression detail",
+    description:
+      "Show whether a captured request was compacted, the engine used, token savings, fail-open status, and any error.",
+    inputSchema: {
+      id: z.string().describe("Request id in the form '<session>/<seq>', e.g. 'SESSION/0003'"),
+    },
+  },
+  async ({ id }) => {
+    const rec = readEntryByIdMulti(ROOTS, id);
+    if (!rec) return json({ error: "not found", id });
+    return json({ id: rec.id, compression: rec.compression || { enabled: false } });
+  },
+);
+
+server.registerTool(
+  "original_request",
+  {
+    title: "Original request",
+    description: "Return the original request body captured before any agent-switch compact transformation.",
+    inputSchema: {
+      id: z.string().describe("Request id in the form '<session>/<seq>', e.g. 'SESSION/0003'"),
+    },
+  },
+  async ({ id }) => {
+    const rec = readEntryByIdMulti(ROOTS, id);
+    if (!rec) return json({ error: "not found", id });
+    return json({ id: rec.id, request: rec.request || null });
+  },
+);
+
+server.registerTool(
+  "forwarded_request",
+  {
+    title: "Forwarded request",
+    description: "Return the request body that agent-switch actually forwarded upstream after compact processing.",
+    inputSchema: {
+      id: z.string().describe("Request id in the form '<session>/<seq>', e.g. 'SESSION/0003'"),
+    },
+  },
+  async ({ id }) => {
+    const rec = readEntryByIdMulti(ROOTS, id);
+    if (!rec) return json({ error: "not found", id });
+    return json({ id: rec.id, request: rec.forwarded || rec.request || null, compacted: Boolean(rec.forwarded) });
+  },
+);
+
 await server.connect(new StdioServerTransport());

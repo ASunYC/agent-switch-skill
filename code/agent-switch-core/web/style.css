@@ -250,6 +250,7 @@ button.on { background: var(--accent); color: #0e1116; border-color: var(--accen
 .row.status-5xx { border-left: 3px solid var(--del); padding-left: 9px; }
 .retry-badge { color: var(--muted); }
 .noise-badge { color: var(--muted); }
+.compact-badge { color: var(--add); }
 .list-empty { color: var(--muted); padding: 18px 14px; font-size: 12px; }
 .card.err-card { border-color: var(--del); }
 .card.err-card .v { color: var(--del); }

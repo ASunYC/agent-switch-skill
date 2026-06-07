@@ -75,6 +75,35 @@ agent-switch webui
 
 When the child CLI exits, `agent-switch` prints `agent-switch: returned to Codex` with the exit code, latest agent-switch session, captured request count, dashboard command, and latest export command. This terminal output is the handoff back to the current Codex session.
 
+## Headroom Compact Mode
+
+Do not enable compact mode unless the user explicitly asks for automatic compression, compact, or Headroom. Plain `agent-switch claude` must remain transparent and must not modify Claude Code requests.
+
+When requested, use compact mode only with Claude Code based providers:
+
+```bash
+agent-switch claude --compact
+agent-switch kimi --compact
+agent-switch bedrock --compact
+agent-switch vertex --compact
+```
+
+Compact mode uses the bundled `headroom-ai` JavaScript SDK against an external Headroom proxy. Check dependencies first:
+
+```bash
+agent-switch compact doctor
+```
+
+If Headroom is missing, print install guidance rather than installing external Python/Rust tooling automatically:
+
+```bash
+agent-switch compact install
+```
+
+Default compact behavior is fail-open: if Headroom fails, agent-switch records the error and forwards the original request. Use `--compact-fail closed` only when the user explicitly wants uncompressed requests to stop.
+
+RTK is intentionally not initialized in compact v1. Do not run `rtk init`, do not modify Claude/Codex hooks, and do not edit global agent instruction files for RTK.
+
 ## Missing Target CLI
 
 `agent-switch` installs and runs the capture tooling only. It does not silently install third-party coding CLIs such as Claude Code, Codex, CodeWhale, DeepSeek-TUI, or OpenCode.

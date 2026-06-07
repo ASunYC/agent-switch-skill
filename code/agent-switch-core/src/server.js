@@ -74,6 +74,7 @@ function apiRequest(roots, store, id) {
   const fmt = detectFormat(rec);
   const A = getAdapter(fmt);
   const body = rec.request?.body || {};
+  const forwardedBody = rec.forwarded?.body || null;
   const response = rec.response?.raw ? A.reassemble(rec.response.raw) : rec.response;
   const usage = response?.usage || {};
   return {
@@ -85,6 +86,10 @@ function apiRequest(roots, store, id) {
       response,
       estTokens: A.estimateTokens(body),
       cost: A.cost(body.model, usage),
+      forwarded: forwardedBody ? {
+        view: A.view(forwardedBody),
+        estTokens: A.estimateTokens(forwardedBody),
+      } : null,
     },
   };
 }

@@ -15,6 +15,7 @@ test("prints handoff for provider runs only", () => {
   assert.equal(internals.shouldPrintHandoff(["webui"]), false);
   assert.equal(internals.shouldPrintHandoff(["view"]), false);
   assert.equal(internals.shouldPrintHandoff(["export", "session/0001"]), false);
+  assert.equal(internals.shouldPrintHandoff(["compact", "doctor"]), false);
 });
 
 test("renders an empty handoff without logs", () => {

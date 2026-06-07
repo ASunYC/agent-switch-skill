@@ -39,27 +39,15 @@ export function readBlob(root, ref) {
 // The two array keys that hold conversation history (Anthropic vs OpenAI shape).
 const HISTORY_KEYS = ["messages", "input"];
 
-// Split a full record's request body into blobs + a v2 manifest. The big repeated
-// pieces (system, tools, each history message) become blob refs; everything small
-// (model, params, headers, response) stays inline.
-export function packRecord(root, rec) {
-  // Preserve the full request envelope (method, url, headers, - minus the body,
-  // which is split into meta + blob refs below (or stored raw, see below).
-  const reqEnvelope = { ...(rec.request || {}) };
-  const body = reqEnvelope.body;
-  delete reqEnvelope.body;
-
-  const base = {
-    v: 2,
-    id: rec.id, session: rec.session, seq: rec.seq, ts: rec.ts, format: rec.format,
-    response: rec.response ?? null,
-  };
-
+function packHttpEnvelope(root, envelopeIn) {
+  const envelope = { ...(envelopeIn || {}) };
+  const body = envelope.body;
+  delete envelope.body;
   // Raw body: proxy stores non-JSON payloads as strings and empty bodies as null/array.
   // These can't be split into meta+blobs -store verbatim.
   const isObjBody = body !== null && typeof body === "object" && !Array.isArray(body);
   if (!isObjBody) {
-    return { ...base, request: { ...reqEnvelope, rawBody: body ?? null } };
+    return { ...envelope, rawBody: body ?? null };
   }
 
   const historyKey = HISTORY_KEYS.find((k) => Array.isArray(body[k])) || null;
@@ -72,7 +60,22 @@ export function packRecord(root, rec) {
   const tools = Array.isArray(body.tools) ? writeBlob(root, body.tools) : null;
   const messages = historyKey ? body[historyKey].map((m) => writeBlob(root, m)) : [];
 
-  return { ...base, request: { ...reqEnvelope, meta, historyKey, system, tools, messages } };
+  return { ...envelope, meta, historyKey, system, tools, messages };
+}
+
+// Split a full record's request body into blobs + a v2 manifest. The big repeated
+// pieces (system, tools, each history message) become blob refs; everything small
+// (model, params, headers, response) stays inline.
+export function packRecord(root, rec) {
+  const base = {
+    v: 2,
+    id: rec.id, session: rec.session, seq: rec.seq, ts: rec.ts, format: rec.format,
+    response: rec.response ?? null,
+  };
+  if (rec.compression) base.compression = rec.compression;
+  const packed = { ...base, request: packHttpEnvelope(root, rec.request || {}) };
+  if (rec.forwarded) packed.forwarded = packHttpEnvelope(root, rec.forwarded);
+  return packed;
 }
 
 function safeBlob(root, ref) {
@@ -85,10 +88,12 @@ function safeBlob(root, ref) {
 
 // Collect every blob ref a v2 manifest points at.
 export function collectRefs(manifest, used) {
-  const r = manifest.request || {};
-  if (r.system) used.add(r.system);
-  if (r.tools) used.add(r.tools);
-  for (const ref of r.messages || []) used.add(ref);
+  for (const r of [manifest.request, manifest.forwarded]) {
+    if (!r) continue;
+    if (r.system) used.add(r.system);
+    if (r.tools) used.add(r.tools);
+    for (const ref of r.messages || []) used.add(ref);
+  }
 }
 
 // Mark-and-sweep: delete blobs not referenced by any remaining v2 manifest under
@@ -136,17 +141,11 @@ export function gcBlobs(root, listSessions, sessionDir) {
   }
 }
 
-// Reassemble the exact original full record from a v2 manifest.
-export function unpackRecord(root, manifest) {
-  const r = manifest.request || {};
+function unpackHttpEnvelope(root, packed) {
+  const r = packed || {};
   if ("rawBody" in r) {
     const { rawBody, ...envelope } = r;
-    return {
-      id: manifest.id, session: manifest.session, seq: manifest.seq,
-      ts: manifest.ts, format: manifest.format,
-      request: { ...envelope, body: rawBody },
-      response: manifest.response ?? null,
-    };
+    return { ...envelope, body: rawBody };
   }
   const { meta, historyKey, system, tools, messages, ...envelope } = r;
   // Key order is normalized here: the reconstructed body lists meta scalars first,
@@ -157,10 +156,20 @@ export function unpackRecord(root, manifest) {
   if (system != null) body.system = safeBlob(root, system);
   if (tools != null) body.tools = safeBlob(root, tools);
   if (historyKey) body[historyKey] = (messages || []).map((ref) => safeBlob(root, ref));
-  return {
+  return { ...envelope, body };
+}
+
+// Reassemble the exact original full record from a v2 manifest.
+export function unpackRecord(root, manifest) {
+  const rec = {
     id: manifest.id, session: manifest.session, seq: manifest.seq,
     ts: manifest.ts, format: manifest.format,
-    request: { ...envelope, body },
+    request: unpackHttpEnvelope(root, manifest.request),
     response: manifest.response ?? null,
+  };
+  if (manifest.compression) rec.compression = manifest.compression;
+  if (manifest.forwarded) rec.forwarded = unpackHttpEnvelope(root, manifest.forwarded);
+  return {
+    ...rec,
   };
 }

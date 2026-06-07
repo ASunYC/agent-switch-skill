@@ -122,6 +122,32 @@ test("--version flag prints version and exits 0", async () => {
   assert.match(stdout, /^\d+\.\d+\.\d+/);
 });
 
+test("--help lists compact commands and flags", async () => {
+  const { code, stdout } = await run(["--help"]);
+
+  assert.equal(code, 0);
+  assert.match(stdout, /agent-switch compact doctor/);
+  assert.match(stdout, /--compact/);
+  assert.match(stdout, /--compact-base-url/);
+});
+
+test("compact install prints external Headroom instructions", async () => {
+  const { code, stdout } = await run(["compact", "install"]);
+
+  assert.equal(code, 0);
+  assert.match(stdout, /pip install "headroom-ai\[proxy\]"/);
+  assert.match(stdout, /headroom proxy/);
+  assert.match(stdout, /RTK is intentionally not initialized/);
+});
+
+test("--compact is limited to Claude Code based providers in v1", async () => {
+  const { code, stderr } = await run(["codex", "--compact"], { OPENAI_BASE_URL: "https://api.openai.com" });
+
+  assert.equal(code, 1);
+  assert.match(stderr, /--compact is only supported/);
+  assert.match(stderr, /claude, kimi, bedrock, vertex/);
+});
+
 test("agent-switch rm deletes a session directory", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-switch-rmcli-"));
   const session = "2020-01-01T00-00-00-000Z";
