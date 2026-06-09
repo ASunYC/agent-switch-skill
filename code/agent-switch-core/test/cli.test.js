@@ -127,8 +127,67 @@ test("--help lists compact commands and flags", async () => {
 
   assert.equal(code, 0);
   assert.match(stdout, /agent-switch compact doctor/);
+  assert.match(stdout, /agent-switch profile new/);
+  assert.match(stdout, /--profile/);
   assert.match(stdout, /--compact/);
   assert.match(stdout, /--compact-base-url/);
+});
+
+test("profile commands create, list, path, and delete profiles", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "agent-switch-profilecli-"));
+  const env = { AGENT_SWITCH_PROFILE_HOME: home };
+
+  const created = await run(["profile", "new", "codex/work"], env);
+  assert.equal(created.code, 0);
+  assert.match(created.stdout, /created profile codex\/work/);
+
+  const listed = await run(["profile", "list", "codex"], env);
+  assert.equal(listed.code, 0);
+  assert.match(listed.stdout, /codex\/work/);
+
+  const pathResult = await run(["profile", "path", "codex/work"], env);
+  assert.equal(pathResult.code, 0);
+  assert.equal(pathResult.stdout.trim(), path.join(home, "codex", "work"));
+
+  const refused = await run(["profile", "delete", "codex/work"], env);
+  assert.equal(refused.code, 1);
+  assert.match(refused.stderr, /without --yes/);
+
+  const deleted = await run(["profile", "delete", "codex/work", "--yes"], env);
+  assert.equal(deleted.code, 0);
+  assert.match(deleted.stdout, /deleted profile codex\/work/);
+  assert.equal(fs.existsSync(path.join(home, "codex", "work")), false);
+});
+
+test("codex --profile reads config.toml from CODEX_HOME profile", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "agent-switch-profile-run-"));
+  const profile = path.join(home, "codex", "work");
+  fs.mkdirSync(profile, { recursive: true });
+  fs.writeFileSync(path.join(profile, "config.toml"), [
+    "[model_providers.openai]",
+    "base_url = \"https://profile.example/v1\"",
+    "",
+  ].join("\n"));
+
+  const { code, stderr } = await run(["codex", "--profile", "work"], {
+    AGENT_SWITCH_PROFILE_HOME: home,
+    OPENAI_BASE_URL: "https://env.example/v1",
+    PATH: "",
+    Path: "",
+  });
+
+  assert.equal(code, 1);
+  assert.match(stderr, /agent-switch profile codex\/work/);
+  assert.match(stderr, /upstream from Codex config\.toml ->https:\/\/profile\.example\/v1/);
+  assert.match(stderr, /config\.toml sets model_providers\.openai\.base_url=https:\/\/profile\.example\/v1/);
+  assert.match(stderr, /command not found: codex/);
+});
+
+test("--profile rejects unsupported wrapped CLIs", async () => {
+  const { code, stderr } = await run(["codewhale", "--profile", "work"]);
+
+  assert.equal(code, 1);
+  assert.match(stderr, /profiles are not supported for CodeWhale/);
 });
 
 test("compact install prints external Headroom instructions", async () => {

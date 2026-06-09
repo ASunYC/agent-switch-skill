@@ -1,6 +1,6 @@
 ---
 name: agent-switch-skill
-description: Install and operate the bundled agent-switch tooling for switching between coding CLIs while capturing their model conversations. Use when the user wants to deploy this skill, inspect Claude Code/Codex/DeepSeek/Kimi/OpenCode prompts and tool calls, view or export agent-switch logs, or run commands like `agent-switch claude` so another CLI can work and return a handoff summary to Codex.
+description: Install and operate the bundled agent-switch tooling for switching between coding CLIs while capturing their model conversations. Use when the user wants to deploy this skill, inspect Claude Code/Codex/DeepSeek/Kimi/OpenCode prompts and tool calls, manage isolated CLI profiles/accounts, view or export agent-switch logs, or run commands like `agent-switch claude` so another CLI can work and return a handoff summary to Codex.
 ---
 
 # Agent Switch Skill
@@ -74,6 +74,56 @@ agent-switch webui
 ```
 
 When the child CLI exits, `agent-switch` prints `agent-switch: returned to Codex` with the exit code, latest agent-switch session, captured request count, dashboard command, and latest export command. This terminal output is the handoff back to the current Codex session.
+
+## CLI Account Profiles
+
+Use profiles when the user wants multiple local accounts for Codex, Claude Code, or OpenCode. A profile changes only the target CLI's config/account directory; the working directory remains the current project.
+
+Supported profile mappings:
+
+- Codex: `CODEX_HOME=~/.agent-switch/profiles/codex/<name>`
+- Claude Code and Claude-based providers: `CLAUDE_CONFIG_DIR=~/.agent-switch/profiles/claude/<name>`
+- OpenCode: `OPENCODE_CONFIG_DIR=~/.agent-switch/profiles/opencode/<name>`
+
+Create profiles explicitly:
+
+```bash
+agent-switch profile new codex/work
+agent-switch profile new claude/work
+agent-switch profile new opencode/work
+```
+
+Use profiles with wrapped CLIs:
+
+```bash
+agent-switch codex --profile work
+agent-switch claude --profile work
+agent-switch opencode --profile work
+```
+
+If the user passes only `--profile work`, infer the tool from the provider. `agent-switch codex --profile work` means `codex/work`; `agent-switch claude --profile work` means `claude/work`. For Kimi, Bedrock, and Vertex, use Claude profiles because those providers run the `claude` binary.
+
+If the profile does not exist, tell the user to create it first. Do not create profiles silently during a run.
+
+The first use of a new profile may require the target CLI to log in again. Let that CLI handle its normal login flow inside the isolated profile.
+
+For safe shared defaults, use:
+
+```bash
+agent-switch profile new codex/work --shared
+```
+
+Shared mode may link or copy non-secret defaults such as Codex `config.toml`, Claude `settings.json`, skills, commands, agents, and plugins. It must not copy known auth/session files such as Codex `auth.json`, Claude `.credentials.json`, `sessions`, `projects`, `todos`, or history files.
+
+Manage profiles:
+
+```bash
+agent-switch profile list
+agent-switch profile path codex/work
+agent-switch profile delete codex/work --yes
+```
+
+If no `--profile` flag is present, preserve the current default behavior and let the CLI use its normal global account/config.
 
 ## Headroom Compact Mode
 

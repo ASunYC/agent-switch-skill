@@ -17,6 +17,15 @@ import { createServer } from "./server.js";
 import { resolveProvider, PROVIDERS, PICKABLE } from "./providers.js";
 import { globalRoot, legacyRoot, readRoots } from "./paths.js";
 import { checkHeadroomProxy, checkHeadroomSdk, DEFAULT_COMPACT, isClaudeCompactProvider } from "./compact.js";
+import {
+  createProfile,
+  deleteProfile,
+  listProfiles,
+  parseProfileSpec,
+  profileDir,
+  resolveRunProfile,
+  ProfileError,
+} from "./profiles.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const VERSION = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8")).version;
@@ -41,6 +50,10 @@ USAGE
   agent-switch export <id> [--format raw|md|json|har]
   agent-switch compact doctor      Check Headroom compact dependencies
   agent-switch compact install     Print Headroom install commands
+  agent-switch profile new <tool>/<name> [--shared]
+  agent-switch profile list [tool]
+  agent-switch profile path <tool>/<name>
+  agent-switch profile delete <tool>/<name> --yes
 
 OPTIONS
   --provider <p>      Force format/env for \`run\`
@@ -56,6 +69,9 @@ OPTIONS
   --no-open           Keep dashboard server headless (default for captured CLI runs)
   --no-redact         Do NOT mask auth tokens in saved logs
   --no-mcp            Do NOT inject agent-switch's inspection tools into Claude Code
+  --profile <name|tool/name>
+                      Run supported CLIs with an isolated account/config profile
+                      Supported tools: claude, codex, opencode
   --no-settings-override   Do NOT force Claude Code onto the proxy via --settings
                            (use if a provider switcher set ANTHROPIC_BASE_URL)
   --env-var <name>    Override the environment variable used to set the proxy URL
@@ -75,6 +91,9 @@ EXAMPLES
   agent-switch compact doctor
   agent-switch dashboard           # open the saved-log dashboard
   agent-switch codex
+  agent-switch profile new codex/work
+  agent-switch codex --profile work
+  agent-switch claude --profile claude/work
   agent-switch codewhale
   agent-switch codex-azure         # set AZURE_OPENAI_ENDPOINT first
   agent-switch deepseek
@@ -106,6 +125,9 @@ function parseArgs(argv) {
     else if (a === "--no-open") opts.open = false;
     else if (a === "--no-redact") opts.redact = false;
     else if (a === "--no-mcp") opts.mcp = false;
+    else if (a === "--profile") opts.profile = argv[++i];
+    else if (a === "--shared") opts.shared = true;
+    else if (a === "--yes" || a === "-y") opts.yes = true;
     else if (a === "--no-settings-override") opts.settingsOverride = false;
     else if (a === "--env-var") opts.envVar = argv[++i];
     else if (a === "--compact") opts.compact.enabled = true;
@@ -188,7 +210,7 @@ function mcpArgs(opts) {
 // Run `codex doctor` and parse the auth mode / endpoint so we can warn the user
 // when Codex is configured with ChatGPT auth (wss:// websocket transport), which
 // bypasses OPENAI_BASE_URL and therefore never reaches our proxy.
-function detectCodexChatGPTAuth() {
+function detectCodexChatGPTAuth(env = process.env) {
   return new Promise((resolve) => {
     let output = "";
     let settled = false;
@@ -196,7 +218,7 @@ function detectCodexChatGPTAuth() {
 
     let child;
     try {
-      child = spawnCommand("codex", ["doctor"], { stdio: ["ignore", "pipe", "pipe"] });
+      child = spawnCommand("codex", ["doctor"], { stdio: ["ignore", "pipe", "pipe"], env });
     } catch {
       return finish(null);
     }
@@ -221,8 +243,9 @@ function detectCodexChatGPTAuth() {
 // Read model_providers.*.base_url from ~/.codex/config.toml. Codex prioritizes
 // config.toml over OPENAI_BASE_URL, so we must read the configured upstream from
 // there and override it via -c flag when spawning codex.
-function codexConfigBaseUrl() {
-  const configPath = path.join(os.homedir(), ".codex", "config.toml");
+function codexConfigBaseUrl(env = process.env) {
+  const configRoot = env.CODEX_HOME || path.join(os.homedir(), ".codex");
+  const configPath = path.join(configRoot, "config.toml");
   if (!fs.existsSync(configPath)) return null;
   const toml = fs.readFileSync(configPath, "utf8");
   const m = toml.match(/^\[model_providers\.(\S+)\][^\[]*?^base_url\s*=\s*"([^"]+)"/m);
@@ -234,12 +257,15 @@ function codexConfigBaseUrl() {
 // shadow user settings in Claude Code's precedence, so check them in the same
 // order. The env var differs by mode: ANTHROPIC_BASE_URL for vanilla Claude,
 // ANTHROPIC_BEDROCK_BASE_URL when CLAUDE_CODE_USE_BEDROCK=1, etc.
-function settingsEnvBaseUrl(envVar) {
-  if (process.env.AGENT_SWITCH_IGNORE_CLAUDE_SETTINGS === "1") return null;
+function settingsEnvBaseUrl(envVar, env = process.env) {
+  if (env.AGENT_SWITCH_IGNORE_CLAUDE_SETTINGS === "1") return null;
+  const userSettings = env.CLAUDE_CONFIG_DIR
+    ? path.join(env.CLAUDE_CONFIG_DIR, "settings.json")
+    : path.join(os.homedir(), ".claude", "settings.json");
   const files = [
     path.resolve(".claude/settings.local.json"),
     path.resolve(".claude/settings.json"),
-    path.join(os.homedir(), ".claude", "settings.json"),
+    userSettings,
   ];
   for (const f of files) {
     try {
@@ -299,6 +325,55 @@ async function compactCmd(args, opts) {
       "If the proxy check fails, run: headroom proxy",
     ].join("\n") + "\n"
   );
+}
+
+function profileCmd(args, opts) {
+  const sub = args[0];
+  try {
+    if (sub === "new") {
+      if (!args[1]) return void process.stdout.write("Usage: agent-switch profile new <tool>/<name> [--shared]\n");
+      const profile = createProfile(args[1], { shared: opts.shared });
+      const shared = profile.linked.length
+        ? `\nshared: ${profile.linked.map((x) => `${x.name} (${x.mode})`).join(", ")}`
+        : opts.shared ? "\nshared: no default files found to share" : "";
+      process.stdout.write(`created profile ${profile.spec}\npath: ${profile.dir}${shared}\n`);
+      return;
+    }
+    if (sub === "list") {
+      const rows = listProfiles(args[1] || null);
+      if (!rows.length) {
+        process.stdout.write("no profiles found\n");
+        return;
+      }
+      process.stdout.write(rows.map((p) => `${p.spec}\t${p.dir}`).join("\n") + "\n");
+      return;
+    }
+    if (sub === "path") {
+      if (!args[1]) return void process.stdout.write("Usage: agent-switch profile path <tool>/<name>\n");
+      const parsed = parseProfileSpec(args[1]);
+      process.stdout.write(profileDir(parsed.tool, parsed.name) + "\n");
+      return;
+    }
+    if (sub === "delete" || sub === "rm") {
+      if (!args[1]) return void process.stdout.write("Usage: agent-switch profile delete <tool>/<name> --yes\n");
+      const deleted = deleteProfile(args[1], { yes: opts.yes });
+      process.stdout.write(`deleted profile ${deleted.spec}\npath: ${deleted.dir}\n`);
+      return;
+    }
+    process.stdout.write(
+      "Usage:\n" +
+      "  agent-switch profile new <tool>/<name> [--shared]\n" +
+      "  agent-switch profile list [tool]\n" +
+      "  agent-switch profile path <tool>/<name>\n" +
+      "  agent-switch profile delete <tool>/<name> --yes\n"
+    );
+  } catch (e) {
+    if (e instanceof ProfileError) {
+      process.stderr.write(`agent-switch profile: ${e.message}\n`);
+      process.exit(1);
+    }
+    throw e;
+  }
 }
 
 function isLocalhostUrl(url) {
@@ -401,6 +476,17 @@ function targetInstallHint(command, provider, requestedCommand = command) {
 
 async function wrap(command, args, opts) {
   const provider = resolveProvider(command, opts.provider, opts.envVar);
+  let runProfile = null;
+  try {
+    runProfile = resolveRunProfile(provider, opts.profile);
+  } catch (e) {
+    if (e instanceof ProfileError) {
+      process.stderr.write(`agent-switch: ${e.message}\n`);
+      process.exit(1);
+    }
+    throw e;
+  }
+  const childBaseEnv = runProfile ? { ...process.env, ...runProfile.env } : process.env;
   const claudeBased = provider.command === "claude";
   if (opts.compact.enabled) {
     if (opts.compact.engine !== "headroom") {
@@ -422,7 +508,7 @@ async function wrap(command, args, opts) {
   // before opening the (otherwise empty) dashboard.
   let codexChatGPTInfo = null;
   if (provider.command === "codex") {
-    const info = await detectCodexChatGPTAuth();
+    const info = await detectCodexChatGPTAuth(childBaseEnv);
     if (info?.authMode === "chatgpt" || info?.endpoint?.startsWith("wss://")) {
       codexChatGPTInfo = info;
     }
@@ -431,14 +517,14 @@ async function wrap(command, args, opts) {
   // If a provider switcher wrote ANTHROPIC_BASE_URL into settings.json and the
   // user didn't override --upstream, forward there by default (the plain claude
   // provider's default upstream is anthropic.com; kimi etc. keep their own).
-  const settingsBaseUrl = claudeBased ? settingsEnvBaseUrl(provider.envVar) : null;
+  const settingsBaseUrl = claudeBased ? settingsEnvBaseUrl(provider.envVar, childBaseEnv) : null;
   const codexBased = provider.command === "codex" && !provider.autoUpstream;
-  const codexConfig = codexBased ? codexConfigBaseUrl() : null;
+  const codexConfig = codexBased ? codexConfigBaseUrl(childBaseEnv) : null;
   let upstream = opts.upstream
     || (codexConfig && codexConfig.baseUrl)
     || (provider.upstream === "auto" ? null : provider.upstream);
   // autoUpstream: resolve upstream from the same env var we're about to override
-  if (!upstream && provider.autoUpstream) upstream = process.env[provider.envVar];
+  if (!upstream && provider.autoUpstream) upstream = childBaseEnv[provider.envVar];
   // Picking the upstream from settings.json covers two cases: vanilla Claude
   // (default upstream is anthropic.com, switchers write ANTHROPIC_BASE_URL) and
   // autoUpstream providers like bedrock/vertex (no fixed upstream -settings.json
@@ -453,9 +539,9 @@ async function wrap(command, args, opts) {
   // A provider switcher (e.g. cc-switch) may have set ANTHROPIC_BASE_URL directly in the
   // environment rather than in settings.json -pick it up so the proxy forwards to the
   // right third-party API instead of defaulting to api.anthropic.com.
-  if (!opts.upstream && !settingsBaseUrl && claudeBased && process.env[provider.envVar] &&
+  if (!opts.upstream && !settingsBaseUrl && claudeBased && childBaseEnv[provider.envVar] &&
       provider.upstream === "https://api.anthropic.com") {
-    upstream = process.env[provider.envVar];
+    upstream = childBaseEnv[provider.envVar];
     process.stderr.write(`  \x1b[36m*\x1b[0m agent-switch: upstream from ${provider.envVar} env ->${upstream}\n`);
   }
 
@@ -500,9 +586,12 @@ async function wrap(command, args, opts) {
   const dashPort = await listen(dashboard, opts.port);
   const dashUrl = `http://127.0.0.1:${dashPort}`;
   const proxyUrl = `http://127.0.0.1:${proxyPort}`;
-  args = proxyArgs(args, provider.envVar, proxyUrl, process.env, upstream);
+  args = proxyArgs(args, provider.envVar, proxyUrl, childBaseEnv, upstream);
 
   process.stderr.write(banner(dashUrl, provider, upstream));
+  if (runProfile) {
+    process.stderr.write(`  \x1b[36m*\x1b[0m agent-switch profile ${runProfile.spec} -> ${runProfile.dir}\n`);
+  }
   if (codexChatGPTInfo) {
     const ep = codexChatGPTInfo.endpoint ? ` (${codexChatGPTInfo.endpoint})` : "";
     process.stderr.write(
@@ -554,7 +643,7 @@ async function wrap(command, args, opts) {
   const spawnCmd = provider.command || command;
   const child = spawnCommand(spawnCmd, args, {
     stdio: "inherit",
-    env: { ...process.env, [provider.envVar]: proxyUrl },
+    env: { ...childBaseEnv, [provider.envVar]: proxyUrl },
   });
 
   const shutdown = (code) => {
@@ -611,6 +700,7 @@ export async function main(argv) {
 
   if (cmd === "dashboard" || cmd === "webui" || cmd === "view") return view(opts);
   if (cmd === "compact") return compactCmd(rest.slice(1), opts);
+  if (cmd === "profile") return profileCmd(rest.slice(1), opts);
   if (cmd === "migrate") return migrate(opts);
   if (cmd === "repack") { opts.session = rest[1]; return repack(opts); }
   if (cmd === "rm") return rmCmd(rest[1], opts);

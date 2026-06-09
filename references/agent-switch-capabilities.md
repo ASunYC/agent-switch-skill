@@ -13,6 +13,27 @@ The bundled code in `code/agent-switch-core` is the internal capture engine for 
 - `ollama`, `lmstudio`, `openrouter`, `glm`, `bedrock`, `vertex`: built-in provider recipes.
 - `run --provider <provider> -- <cmd...>`: wrap any CLI that respects a base URL env var.
 
+## CLI Account Profiles
+
+Profiles isolate target CLI account/config directories without changing the current working directory.
+
+- `agent-switch profile new codex/work`: creates `~/.agent-switch/profiles/codex/work`.
+- `agent-switch profile new claude/work`: creates `~/.agent-switch/profiles/claude/work`.
+- `agent-switch profile new opencode/work`: creates `~/.agent-switch/profiles/opencode/work`.
+- `agent-switch codex --profile work`: runs Codex with `CODEX_HOME` set to the profile directory.
+- `agent-switch claude --profile work`: runs Claude Code with `CLAUDE_CONFIG_DIR` set to the profile directory.
+- `agent-switch opencode --profile work`: runs OpenCode with `OPENCODE_CONFIG_DIR` set to the profile directory.
+
+`agent-switch kimi --profile work`, `agent-switch bedrock --profile work`, and `agent-switch vertex --profile work` use Claude profiles because those providers run the `claude` binary.
+
+Useful profile commands:
+
+- `agent-switch profile list [tool]`
+- `agent-switch profile path <tool>/<name>`
+- `agent-switch profile delete <tool>/<name> --yes`
+
+`--shared` links or copies safe defaults from the normal CLI home. It never shares known auth/session files such as Codex `auth.json`, Claude `.credentials.json`, session directories, project state, todos, or history files.
+
 ## Core Operations
 
 - `agent-switch <provider> [args...]`: run a coding CLI through agent-switch and print a Codex handoff summary when it exits.

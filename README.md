@@ -25,6 +25,7 @@ It helps you:
 - Export captured requests as Markdown, raw HTTP, JSON, or HAR
 - Return a concise handoff summary back to the current Codex session
 - Run proxy-only mode for IDEs or custom OpenAI/Anthropic-compatible clients
+- Isolate multiple local CLI accounts with named profiles
 - Remember local Hermes API authorization after asking the user once
 
 ## Design Goals
@@ -64,6 +65,7 @@ The installer installs the bundled CLI package from `cli/`, verifies `agent-swit
 - **Dashboard**: browse saved logs in a local web UI
 - **Exports**: write captured requests as `raw`, `md`, `json`, or `har`
 - **Provider wrappers**: support Claude Code, Codex, CodeWhale, DeepSeek-TUI legacy shims, Kimi, OpenCode, and compatible gateways
+- **CLI profiles**: isolate Claude Code, Codex, and OpenCode accounts/configs under `~/.agent-switch/profiles`
 - **Custom commands**: wrap arbitrary CLIs with `agent-switch run --provider <provider> -- <cmd...>`
 - **Storage migration**: move legacy project logs into the global store
 - **Session cleanup**: delete sessions and reclaim orphaned content blobs
@@ -197,6 +199,58 @@ agent-switch run --upstream https://my.api/v1 --env-var MY_BASE_URL -- my-tool
 ```
 
 Captured CLI runs do not open a browser by default. When the delegated CLI exits, Agent Switch prints a Codex handoff summary with the exit code, session id, captured request count, dashboard command, and latest export command.
+
+### Multiple CLI Accounts
+
+Profiles isolate a target CLI's account/config directory while keeping the current project directory unchanged.
+
+Supported profile tools:
+
+- `codex` uses `CODEX_HOME`
+- `claude` uses `CLAUDE_CONFIG_DIR`
+- `opencode` uses `OPENCODE_CONFIG_DIR`
+
+Create a profile:
+
+```bash
+agent-switch profile new codex/work
+agent-switch profile new claude/work
+agent-switch profile new opencode/work
+```
+
+Profile directories are stored under:
+
+```text
+~/.agent-switch/profiles/<tool>/<name>
+```
+
+Use a profile:
+
+```bash
+agent-switch codex --profile work
+agent-switch claude --profile work
+agent-switch opencode --profile work
+```
+
+The first time you use a new profile, log in inside that wrapped CLI just as you normally would. For example, create `codex/work`, run `agent-switch codex --profile work`, then complete Codex login for that isolated `CODEX_HOME`.
+
+You can also create a profile that shares non-secret defaults from your normal CLI home:
+
+```bash
+agent-switch profile new codex/work --shared
+```
+
+Shared profiles may link or copy safe files such as `config.toml`, `settings.json`, skills, commands, and plugins. Agent Switch never shares known auth/session files such as Codex `auth.json`, Claude `.credentials.json`, session folders, or history files.
+
+List, inspect, and remove profiles:
+
+```bash
+agent-switch profile list
+agent-switch profile path codex/work
+agent-switch profile delete codex/work --yes
+```
+
+No profile flag means no isolation: `agent-switch codex`, `agent-switch claude`, and `agent-switch opencode` continue to use each CLI's default account/config exactly as before.
 
 ### Headroom Compact
 
@@ -352,6 +406,7 @@ agent-switch rm <session>
 | `dashboard` | `agent-switch dashboard` | Open the dashboard over saved logs |
 | `webui` | `agent-switch webui` | Alias for `dashboard` |
 | `view` | `agent-switch view` | Backward-compatible alias for `dashboard` |
+| `profile` | `agent-switch profile new codex/work` | Manage isolated CLI account/config profiles |
 | `install` | `agent-switch install` | Print local install and update commands |
 
 ### Log and Proxy Commands
@@ -378,6 +433,7 @@ agent-switch rm <session>
 | `--no-open` | Keep a dashboard command headless, useful for tests or remote shells |
 | `--no-redact` | Save auth headers without masking them |
 | `--no-mcp` | Do not inject Agent Switch MCP tools into Claude Code |
+| `--profile <name|tool/name>` | Run Claude Code, Codex, or OpenCode with an isolated account/config profile |
 | `--env-var <name>` | Override which environment variable receives the proxy URL |
 
 ## Supported Providers

@@ -17,6 +17,8 @@ USAGE
   agent-switch deepseek [args...]     Start DeepSeek-TUI legacy shim with conversation capture
   agent-switch kimi [args...]         Start Claude Code against Kimi/Moonshot
   agent-switch run --provider P -- <cmd...>
+  agent-switch profile new <tool>/<name> [--shared]
+  agent-switch profile list [tool]
   agent-switch compact doctor         Check Headroom compact dependencies
   agent-switch compact install        Print Headroom install commands
   agent-switch dashboard              Open the dashboard over saved logs
@@ -24,18 +26,23 @@ USAGE
   agent-switch view                   Alias for dashboard
   agent-switch install                Print install/update commands
 
-Commands such as export, migrate, repack, rm, proxy, compact, --provider,
---upstream, --dir, --open, --no-open, --no-mcp, and --compact are handled by
-agent-switch directly.
+Commands such as export, migrate, repack, rm, proxy, profile, compact,
+--provider, --profile, --upstream, --dir, --open, --no-open, --no-mcp, and
+--compact are handled by agent-switch directly.
 
 Captured CLI runs do not open a browser by default. Use \`agent-switch dashboard\`
 or \`agent-switch webui\` when you want the web UI.
 
 Compact mode is explicit and only supports Claude Code based providers in v1:
 
-  agent-switch claude --compact`;
+  agent-switch claude --compact
 
-const PASS_THROUGH = new Set(["dashboard", "webui", "view", "migrate", "repack", "rm", "export", "proxy", "compact"]);
+Profiles isolate local CLI accounts/config without changing the working dir:
+
+  agent-switch profile new codex/work
+  agent-switch codex --profile work`;
+
+const PASS_THROUGH = new Set(["dashboard", "webui", "view", "migrate", "repack", "rm", "export", "proxy", "profile", "compact"]);
 
 export async function main(argv, io = process) {
   if (!argv.length || argv.includes("-h") || argv.includes("--help")) {
@@ -97,6 +104,11 @@ Headroom compact mode:
   agent-switch compact install
   agent-switch compact doctor
   agent-switch claude --compact
+
+Profiles:
+
+  agent-switch profile new codex/work
+  agent-switch codex --profile work
 
 `;
 }
