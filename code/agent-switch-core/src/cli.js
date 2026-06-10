@@ -457,6 +457,7 @@ function interactiveSelect({ title, hint = "Type to search", right = "", items }
     let selected = 0;
     let renderedLines = 0;
     let done = false;
+    const dataListenersBefore = new Set(input.listeners("data"));
 
     readline.emitKeypressEvents(input);
     const wasRaw = Boolean(input.isRaw);
@@ -465,6 +466,10 @@ function interactiveSelect({ title, hint = "Type to search", right = "", items }
     const cleanup = () => {
       input.off("keypress", onKeypress);
       if (input.isTTY) input.setRawMode(wasRaw);
+      for (const listener of input.listeners("data")) {
+        if (!dataListenersBefore.has(listener)) input.off("data", listener);
+      }
+      input.pause();
       output.write("\x1b[?25h");
     };
 
@@ -540,6 +545,14 @@ function interactiveSelect({ title, hint = "Type to search", right = "", items }
     input.on("keypress", onKeypress);
     render();
   });
+}
+
+function releaseStdinForChild() {
+  if (!process.stdin.isTTY) return;
+  try {
+    process.stdin.setRawMode(false);
+  } catch {}
+  process.stdin.pause();
 }
 
 function localUpstreamHint(upstream, provider) {
@@ -706,6 +719,7 @@ function runCodexLogin(loginDir) {
   return new Promise((resolve) => {
     let child;
     try {
+      releaseStdinForChild();
       child = spawnCommand("codex", ["login"], {
         stdio: "inherit",
         env: { ...process.env, CODEX_HOME: loginDir },
@@ -969,6 +983,7 @@ async function wrap(command, args, opts) {
   }
 
   const spawnCmd = provider.command || command;
+  releaseStdinForChild();
   const child = spawnCommand(spawnCmd, args, {
     stdio: "inherit",
     env: { ...childBaseEnv, [provider.envVar]: proxyUrl },
