@@ -17,10 +17,15 @@ The bundled code in `code/agent-switch-core` is the internal capture engine for 
 
 Profiles isolate target CLI account/config directories without changing the current working directory.
 
-- `agent-switch profile new codex/work`: creates `~/.agent-switch/profiles/codex/work`.
+- `agent-switch codex --profile work`: opens the Codex saved-auth menu, injects the selected auth into `~/.agent-switch/profiles/codex/work/auth.json`, then runs Codex with `CODEX_HOME` set to that profile directory.
+- If `agent-switch codex --profile work` has no extra Codex args and the profile has saved sessions, Agent Switch passes `resume --last` to Codex by default.
+- `agent-switch codex --profile work resume`: show Codex's resume picker for the current working directory.
+- `agent-switch codex --profile work resume --all`: show Codex sessions across directories.
+- Codex saved auth lives under `~/.agent-switch/profiles/codex/.accounts`.
+- The Codex auth menu offers `add auth`, saved auth accounts, and `remove auth`. `add auth` runs the real `codex login` flow in a temporary login directory, then saves the resulting auth snapshot into the account store.
+- Plain `agent-switch codex` does not read or modify the Codex profile auth store.
 - `agent-switch profile new claude/work`: creates `~/.agent-switch/profiles/claude/work`.
 - `agent-switch profile new opencode/work`: creates `~/.agent-switch/profiles/opencode/work`.
-- `agent-switch codex --profile work`: runs Codex with `CODEX_HOME` set to the profile directory.
 - `agent-switch claude --profile work`: runs Claude Code with `CLAUDE_CONFIG_DIR` set to the profile directory.
 - `agent-switch opencode --profile work`: runs OpenCode with `OPENCODE_CONFIG_DIR` set to the profile directory.
 

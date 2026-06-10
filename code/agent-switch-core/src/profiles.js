@@ -82,7 +82,7 @@ export function profileEnv(tool, dir) {
   return { [def.envVar]: dir };
 }
 
-export function resolveRunProfile(provider, requested, env = process.env) {
+export function resolveRunProfile(provider, requested, env = process.env, opts = {}) {
   if (!requested) return null;
   const expectedTool = profileToolForProvider(provider);
   if (!expectedTool) {
@@ -96,6 +96,9 @@ export function resolveRunProfile(provider, requested, env = process.env) {
   }
   const dir = profileDir(parsed.tool, parsed.name, env);
   if (!fs.existsSync(dir)) {
+    if (opts.createIfMissing) {
+      return createProfile(parsed.spec, { env });
+    }
     throw new ProfileError(
       `profile ${parsed.spec} does not exist. Create it first: agent-switch profile new ${parsed.spec}`,
       "PROFILE_MISSING"

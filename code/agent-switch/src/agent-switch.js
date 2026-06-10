@@ -39,8 +39,12 @@ Compact mode is explicit and only supports Claude Code based providers in v1:
 
 Profiles isolate local CLI accounts/config without changing the working dir:
 
-  agent-switch profile new codex/work
-  agent-switch codex --profile work`;
+  agent-switch profile new codex/work     # create a Codex workspace/profile
+  agent-switch codex --profile work  # choose auth, then resume latest session
+  agent-switch codex --profile work resume --all
+  agent-switch profile new claude/work    # create a Claude Code profile
+  agent-switch claude --profile work
+  agent-switch claude --resume            # show Claude Code's resume/session picker`;
 
 const PASS_THROUGH = new Set(["dashboard", "webui", "view", "migrate", "repack", "rm", "export", "proxy", "profile", "compact"]);
 
@@ -107,8 +111,10 @@ Headroom compact mode:
 
 Profiles:
 
-  agent-switch profile new codex/work
   agent-switch codex --profile work
+  agent-switch codex --profile work resume --all
+  agent-switch claude --profile work
+  agent-switch claude --resume
 
 `;
 }

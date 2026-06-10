@@ -82,3 +82,17 @@ test("resolves run profile and rejects mismatched provider tools", () => {
     /profiles are not supported/
   );
 });
+
+test("can auto-create a missing Codex run profile when requested", () => {
+  const env = tempEnv();
+  const resolved = resolveRunProfile(
+    { command: "codex", label: "Codex" },
+    "work",
+    env,
+    { createIfMissing: true }
+  );
+
+  assert.equal(resolved.spec, "codex/work");
+  assert.equal(resolved.dir, profileDir("codex", "work", env));
+  assert.ok(fs.existsSync(resolved.dir));
+});

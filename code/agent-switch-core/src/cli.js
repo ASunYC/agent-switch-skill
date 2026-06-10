@@ -18,6 +18,13 @@ import { resolveProvider, PROVIDERS, PICKABLE } from "./providers.js";
 import { globalRoot, legacyRoot, readRoots } from "./paths.js";
 import { checkHeadroomProxy, checkHeadroomSdk, DEFAULT_COMPACT, isClaudeCompactProvider } from "./compact.js";
 import {
+  codexAuthStoreRoot,
+  injectCodexAuthAccount,
+  listCodexAuthAccounts,
+  removeCodexAuthAccount,
+  saveCodexAuthAccountFromDir,
+} from "./codex-auth-store.js";
+import {
   createProfile,
   deleteProfile,
   listProfiles,
@@ -70,8 +77,8 @@ OPTIONS
   --no-redact         Do NOT mask auth tokens in saved logs
   --no-mcp            Do NOT inject agent-switch's inspection tools into Claude Code
   --profile <name|tool/name>
-                      Run supported CLIs with an isolated account/config profile
-                      Supported tools: claude, codex, opencode
+                      Codex: choose/add/remove saved auth, then inject into profile
+                      Claude/OpenCode: run with an isolated config profile
   --no-settings-override   Do NOT force Claude Code onto the proxy via --settings
                            (use if a provider switcher set ANTHROPIC_BASE_URL)
   --env-var <name>    Override the environment variable used to set the proxy URL
@@ -91,9 +98,13 @@ EXAMPLES
   agent-switch compact doctor
   agent-switch dashboard           # open the saved-log dashboard
   agent-switch codex
-  agent-switch profile new codex/work
-  agent-switch codex --profile work
+  agent-switch profile new codex/work     # create a Codex workspace/profile
+  agent-switch codex --profile work  # choose auth, then resume latest session if one exists
+  agent-switch codex --profile work resume      # show Codex resume picker
+  agent-switch codex --profile work resume --all
+  agent-switch profile new claude/work
   agent-switch claude --profile claude/work
+  agent-switch claude --resume       # show Claude Code's resume/session picker
   agent-switch codewhale
   agent-switch codex-azure         # set AZURE_OPENAI_ENDPOINT first
   agent-switch deepseek
@@ -161,18 +172,18 @@ const banner = (dashUrl, provider, upstream) =>
 
 // Pick a client when agent-switch is run with no command.
 function pickProvider() {
-  return new Promise((resolve) => {
-    if (!process.stdin.isTTY) return resolve(null);
-    process.stdout.write("\n  Which client do you want to inspect?\n\n");
-    PICKABLE.forEach((k, i) => process.stdout.write(`    ${i + 1}) ${PROVIDERS[k].label}\n`));
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    rl.question("\n  > ", (ans) => {
-      rl.close();
-      const idx = parseInt(String(ans).trim(), 10) - 1;
-      const key = PICKABLE[idx] || (PROVIDERS[String(ans).trim()] ? String(ans).trim() : null);
-      resolve(key);
-    });
-  });
+  if (!process.stdin.isTTY) return Promise.resolve(null);
+  return interactiveSelect({
+    title: "Select CLI to inspect",
+    hint: "Type to search CLIs",
+    right: "agent-switch",
+    items: PICKABLE.map((key) => ({
+      key,
+      label: PROVIDERS[key].label,
+      detail: key,
+      search: `${key} ${PROVIDERS[key].label}`,
+    })),
+  }).then((item) => item?.key || null);
 }
 
 // Claude Code accepts `--mcp-config <json>` to register MCP servers for a single
@@ -411,6 +422,126 @@ function checkLocalUpstream(upstream, timeoutMs = 1200) {
   });
 }
 
+function askLine(question) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+    rl.question(question, (ans) => {
+      rl.close();
+      resolve(String(ans || "").trim());
+    });
+  });
+}
+
+function color(code, text) {
+  return process.stderr.isTTY ? `\x1b[${code}m${text}\x1b[0m` : text;
+}
+
+function stripAnsi(text) {
+  return String(text).replace(/\x1b\[[0-9;]*m/g, "");
+}
+
+function trimDisplay(text, width) {
+  const plain = stripAnsi(text);
+  if (plain.length <= width) return text;
+  return `${plain.slice(0, Math.max(1, width - 1))}…`;
+}
+
+function interactiveSelect({ title, hint = "Type to search", right = "", items }) {
+  return new Promise((resolve) => {
+    const input = process.stdin;
+    const output = process.stderr;
+    const rows = Math.max(8, output.rows || 24);
+    const width = Math.max(48, output.columns || 100);
+    const maxItems = Math.max(3, Math.min(10, rows - 7));
+    let query = "";
+    let selected = 0;
+    let renderedLines = 0;
+    let done = false;
+
+    readline.emitKeypressEvents(input);
+    const wasRaw = Boolean(input.isRaw);
+    if (input.isTTY) input.setRawMode(true);
+
+    const cleanup = () => {
+      input.off("keypress", onKeypress);
+      if (input.isTTY) input.setRawMode(wasRaw);
+      output.write("\x1b[?25h");
+    };
+
+    const filtered = () => {
+      const q = query.trim().toLowerCase();
+      if (!q) return items;
+      return items.filter((item) =>
+        [item.label, item.detail, item.search]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(q))
+      );
+    };
+
+    const render = () => {
+      const list = filtered();
+      if (selected >= list.length) selected = Math.max(0, list.length - 1);
+      const start = Math.max(0, Math.min(selected - Math.floor(maxItems / 2), Math.max(0, list.length - maxItems)));
+      const visible = list.slice(start, start + maxItems);
+      output.write("\x1b[?25l");
+      if (renderedLines) output.write(`\x1b[${renderedLines}F\x1b[J`);
+
+      const rightText = right ? color("90", right) : "";
+      const titleLine = `${color("36;1", title)}${rightText ? `${" ".repeat(Math.max(2, width - stripAnsi(title).length - stripAnsi(rightText).length))}${rightText}` : ""}`;
+      const searchLine = query ? `${color("90", "Search:")} ${color("33", query)}` : color("90", hint);
+      const lines = [titleLine, "", searchLine];
+
+      if (!list.length) {
+        lines.push("", color("90", "No matches"));
+      } else {
+        for (const [offset, item] of visible.entries()) {
+          const active = start + offset === selected;
+          const prefix = active ? color("33;1", "›") : " ";
+          const label = active ? color("33;1", item.label) : item.label;
+          const detail = item.detail ? `  ${color("90", item.detail)}` : "";
+          lines.push(`${prefix} ${trimDisplay(`${label}${detail}`, width - 4)}`);
+        }
+      }
+
+      lines.push("", color("90", "↑/↓ move  Enter select  Esc cancel  Backspace edit"));
+      output.write(lines.join("\n") + "\n");
+      renderedLines = lines.length;
+    };
+
+    const finish = (value) => {
+      if (done) return;
+      done = true;
+      cleanup();
+      if (renderedLines) output.write(`\x1b[${renderedLines}F\x1b[J`);
+      resolve(value);
+    };
+
+    const onKeypress = (str, key = {}) => {
+      if (key.ctrl && key.name === "c") {
+        cleanup();
+        process.kill(process.pid, "SIGINT");
+        return;
+      }
+      const list = filtered();
+      if (key.name === "return") return finish(list[selected] || null);
+      if (key.name === "escape") return finish(null);
+      if (key.name === "up") selected = Math.max(0, selected - 1);
+      else if (key.name === "down") selected = Math.min(Math.max(0, list.length - 1), selected + 1);
+      else if (key.name === "backspace") {
+        query = query.slice(0, -1);
+        selected = 0;
+      } else if (str && !key.ctrl && !key.meta && str >= " ") {
+        query += str;
+        selected = 0;
+      }
+      render();
+    };
+
+    input.on("keypress", onKeypress);
+    render();
+  });
+}
+
 function localUpstreamHint(upstream, provider) {
   return (
     `agent-switch: local upstream is not reachable: ${upstream}\n` +
@@ -474,11 +605,208 @@ function targetInstallHint(command, provider, requestedCommand = command) {
   return `\nInstall '${command}' and make sure it is available in your PATH, then reopen your terminal.\n`;
 }
 
+async function prepareCodexProfileAuth(runProfile) {
+  if (!runProfile || runProfile.tool !== "codex") return null;
+  importExistingCodexProfileAuth(runProfile);
+  while (true) {
+    const account = await chooseCodexAuthAccount(runProfile);
+    if (account) {
+      const injected = injectCodexAuthAccount(runProfile.dir, account.id);
+      process.stderr.write(
+        `  \x1b[36m*\x1b[0m agent-switch codex auth ${displayCodexAccount(injected)} -> ${runProfile.spec}\n`
+      );
+      return injected;
+    }
+  }
+}
+
+function importExistingCodexProfileAuth(runProfile) {
+  const authPath = path.join(runProfile.dir, "auth.json");
+  if (!fs.existsSync(authPath)) return;
+  try {
+    saveCodexAuthAccountFromDir(runProfile.dir);
+  } catch {}
+}
+
+async function chooseCodexAuthAccount(runProfile) {
+  const scripted = process.env.AGENT_SWITCH_CODEX_AUTH_CHOICE;
+  const accounts = listCodexAuthAccounts();
+  if (!scripted && !process.stdin.isTTY) {
+    throw new ProfileError(
+      "codex --profile needs an interactive terminal to choose or add auth. Run it from PowerShell or another TTY."
+    );
+  }
+
+  const choices = [];
+  choices.push({ kind: "add", label: "add auth" });
+  for (const account of accounts) choices.push({ kind: "use", account, label: displayCodexAccount(account) });
+  if (accounts.length) choices.push({ kind: "remove", label: "remove auth" });
+
+  const choice = scripted
+    ? resolveCodexAuthMenuChoice(scripted, choices, accounts)
+    : await interactiveSelect({
+      title: "Select Codex auth",
+      hint: "Type to search saved auth",
+      right: `${runProfile.spec}  ${codexAuthStoreRoot()}`,
+      items: choices.map((choice) => ({
+        ...choice,
+        label: choice.label,
+        detail: choice.kind === "add"
+          ? "login a new Codex account"
+          : choice.kind === "remove"
+            ? "delete a saved auth"
+            : "saved auth",
+        search: `${choice.label} ${choice.account?.email || ""} ${choice.account?.id || ""}`,
+      })),
+    });
+  if (!choice) throw new ProfileError("auth selection was cancelled");
+  if (choice.kind === "add") return addCodexAuth();
+  if (choice.kind === "use") return choice.account;
+  if (choice.kind === "remove") {
+    await removeCodexAuth(accounts, scripted);
+    return null;
+  }
+  return null;
+}
+
+function resolveCodexAuthMenuChoice(answer, choices, accounts) {
+  const raw = String(answer || "").trim();
+  if (!raw) return null;
+  const lower = raw.toLowerCase();
+  if (lower === "add") return choices.find((c) => c.kind === "add");
+  if (lower === "first") return accounts[0] ? { kind: "use", account: accounts[0] } : null;
+  if (lower === "remove") return choices.find((c) => c.kind === "remove");
+  if (lower.startsWith("remove:")) return { kind: "remove", accountId: raw.slice("remove:".length).trim() };
+  const numeric = Number(raw);
+  if (Number.isInteger(numeric) && numeric > 0 && numeric <= choices.length) return choices[numeric - 1];
+  const account = accounts.find((a) => a.id === raw || a.label === raw || a.email === raw);
+  return account ? { kind: "use", account } : null;
+}
+
+async function addCodexAuth() {
+  const storeRoot = codexAuthStoreRoot();
+  fs.mkdirSync(storeRoot, { recursive: true });
+  const loginDir = fs.mkdtempSync(path.join(storeRoot, "login-"));
+  process.stderr.write(
+    `\nagent-switch: starting Codex login for a new saved auth.\n` +
+    `Complete the Codex login flow, then agent-switch will save it into the local auth store.\n\n`
+  );
+  try {
+    const code = await runCodexLogin(loginDir);
+    if (code !== 0) throw new ProfileError(`Codex login exited with code ${code}`);
+    const { account } = saveCodexAuthAccountFromDir(loginDir);
+    process.stderr.write(`agent-switch: saved Codex auth ${displayCodexAccount(account)}\n`);
+    return account;
+  } finally {
+    fs.rmSync(loginDir, { recursive: true, force: true });
+  }
+}
+
+function runCodexLogin(loginDir) {
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = spawnCommand("codex", ["login"], {
+        stdio: "inherit",
+        env: { ...process.env, CODEX_HOME: loginDir },
+      });
+    } catch (e) {
+      if (e.code === "ENOENT") {
+        process.stderr.write(`\nagent-switch: command not found: codex\n`);
+        process.stderr.write(targetInstallHint("codex", { label: "Codex" }, "codex"));
+      } else {
+        process.stderr.write(`\nagent-switch: ${e.message}\n`);
+      }
+      return resolve(1);
+    }
+    child.on("error", (e) => {
+      if (e.code === "ENOENT") {
+        process.stderr.write(`\nagent-switch: command not found: codex\n`);
+        process.stderr.write(targetInstallHint("codex", { label: "Codex" }, "codex"));
+      } else {
+        process.stderr.write(`\nagent-switch: ${e.message}\n`);
+      }
+      resolve(1);
+    });
+    child.on("exit", (code) => resolve(code ?? 0));
+  });
+}
+
+async function removeCodexAuth(accounts, scripted) {
+  if (!accounts.length) {
+    process.stderr.write("agent-switch: no saved Codex auth accounts to remove.\n");
+    return;
+  }
+  const removeId = scripted?.startsWith("remove:") ? scripted.slice("remove:".length).trim() : null;
+  let target = removeId ? accounts.find((a) => a.id === removeId || a.label === removeId || a.email === removeId) : null;
+  if (!target) {
+    if (!scripted) {
+      const selected = await interactiveSelect({
+        title: "Remove Codex auth",
+        hint: "Type to search saved auth",
+        right: codexAuthStoreRoot(),
+        items: accounts.map((account) => ({
+          account,
+          label: displayCodexAccount(account),
+          detail: account.id,
+          search: `${account.id} ${account.label || ""} ${account.email || ""}`,
+        })),
+      });
+      target = selected?.account || null;
+    }
+  }
+  if (!target) throw new ProfileError("invalid auth removal selection");
+  removeCodexAuthAccount(target.id);
+  process.stderr.write(`agent-switch: removed Codex auth ${displayCodexAccount(target)}\n`);
+}
+
+function displayCodexAccount(account) {
+  const label = account.label || account.email || account.id;
+  const email = account.email && account.email !== label ? ` <${account.email}>` : "";
+  const mode = account.authMode ? ` ${account.authMode}` : "";
+  return `${label}${email}${mode}`;
+}
+
+function maybeDefaultCodexResume(args, runProfile) {
+  if (!runProfile || runProfile.tool !== "codex") return args;
+  if (args.length) return args;
+  if (!hasCodexSessions(runProfile.dir)) return args;
+  process.stderr.write(
+    `  \x1b[36m*\x1b[0m agent-switch: no Codex args supplied; resuming latest ${runProfile.spec} session with \`resume --last\`\n`
+  );
+  return ["resume", "--last"];
+}
+
+function hasCodexSessions(profileDir) {
+  const root = path.join(profileDir, "sessions");
+  if (!fs.existsSync(root)) return false;
+  const stack = [root];
+  while (stack.length) {
+    const dir = stack.pop();
+    let entries = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) stack.push(full);
+      else if (entry.isFile() && entry.name.startsWith("rollout-")) return true;
+    }
+  }
+  return false;
+}
+
 async function wrap(command, args, opts) {
   const provider = resolveProvider(command, opts.provider, opts.envVar);
   let runProfile = null;
   try {
-    runProfile = resolveRunProfile(provider, opts.profile);
+    runProfile = resolveRunProfile(provider, opts.profile, process.env, {
+      createIfMissing: provider.command === "codex" && Boolean(opts.profile),
+    });
+    if (runProfile?.tool === "codex") await prepareCodexProfileAuth(runProfile);
+    args = maybeDefaultCodexResume(args, runProfile);
   } catch (e) {
     if (e instanceof ProfileError) {
       process.stderr.write(`agent-switch: ${e.message}\n`);

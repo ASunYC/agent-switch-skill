@@ -20,6 +20,50 @@ function run(args, env = {}) {
   });
 }
 
+function fakeJwt(payload) {
+  const b64 = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  return `${b64({ alg: "none" })}.${b64(payload)}.sig`;
+}
+
+function writeCodexAuthStore(home, id = "abcdef1234567890") {
+  const store = path.join(home, "codex", ".accounts");
+  const accountsDir = path.join(store, "accounts");
+  fs.mkdirSync(accountsDir, { recursive: true });
+  const now = "2026-01-01T00:00:00.000Z";
+  const record = {
+    id,
+    label: "work@example.com",
+    email: "work@example.com",
+    authMode: "chatgpt",
+    createdAt: now,
+    updatedAt: now,
+    lastUsedAt: null,
+    authJson: {
+      auth_mode: "chatgpt",
+      tokens: {
+        id_token: fakeJwt({ email: "work@example.com", sub: "sub-work" }),
+        access_token: "access",
+        refresh_token: "refresh",
+      },
+    },
+  };
+  fs.writeFileSync(path.join(accountsDir, `${id}.json`), JSON.stringify(record, null, 2));
+  fs.writeFileSync(path.join(store, "index.json"), JSON.stringify({
+    version: 1,
+    currentAccountId: null,
+    accounts: [{
+      id,
+      label: record.label,
+      email: record.email,
+      authMode: record.authMode,
+      createdAt: now,
+      updatedAt: now,
+      lastUsedAt: null,
+    }],
+  }, null, 2));
+  return record;
+}
+
 test("opencode exits with code 1 and a clear error when OPENAI_BASE_URL is unset", async () => {
   const env = { ...process.env };
   delete env.OPENAI_BASE_URL;
@@ -159,8 +203,9 @@ test("profile commands create, list, path, and delete profiles", async () => {
   assert.equal(fs.existsSync(path.join(home, "codex", "work")), false);
 });
 
-test("codex --profile reads config.toml from CODEX_HOME profile", async () => {
+test("codex --profile chooses saved auth and reads config.toml from CODEX_HOME profile", async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "agent-switch-profile-run-"));
+  writeCodexAuthStore(home);
   const profile = path.join(home, "codex", "work");
   fs.mkdirSync(profile, { recursive: true });
   fs.writeFileSync(path.join(profile, "config.toml"), [
@@ -171,15 +216,90 @@ test("codex --profile reads config.toml from CODEX_HOME profile", async () => {
 
   const { code, stderr } = await run(["codex", "--profile", "work"], {
     AGENT_SWITCH_PROFILE_HOME: home,
+    AGENT_SWITCH_CODEX_AUTH_CHOICE: "first",
     OPENAI_BASE_URL: "https://env.example/v1",
     PATH: "",
     Path: "",
   });
 
   assert.equal(code, 1);
+  assert.match(stderr, /agent-switch codex auth work@example\.com chatgpt -> codex\/work/);
+  assert.ok(fs.existsSync(path.join(profile, "auth.json")));
   assert.match(stderr, /agent-switch profile codex\/work/);
   assert.match(stderr, /upstream from Codex config\.toml ->https:\/\/profile\.example\/v1/);
   assert.match(stderr, /config\.toml sets model_providers\.openai\.base_url=https:\/\/profile\.example\/v1/);
+  assert.match(stderr, /command not found: codex/);
+});
+
+test("codex --profile defaults to resume --last when profile sessions exist and no args were supplied", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "agent-switch-profile-resume-"));
+  writeCodexAuthStore(home);
+  const profile = path.join(home, "codex", "work");
+  const sessionDir = path.join(profile, "sessions", "2026", "06", "10");
+  fs.mkdirSync(sessionDir, { recursive: true });
+  fs.writeFileSync(path.join(sessionDir, "rollout-2026-06-10T00-00-00-test.jsonl"), "{}\n");
+
+  const { code, stderr } = await run(["codex", "--profile", "work"], {
+    AGENT_SWITCH_PROFILE_HOME: home,
+    AGENT_SWITCH_CODEX_AUTH_CHOICE: "first",
+    OPENAI_BASE_URL: "https://api.openai.com",
+    PATH: "",
+    Path: "",
+  });
+
+  assert.equal(code, 1);
+  assert.match(stderr, /resuming latest codex\/work session with `resume --last`/);
+  assert.match(stderr, /command not found: codex/);
+});
+
+test("codex --profile does not auto-resume when Codex args were supplied", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "agent-switch-profile-noresume-"));
+  writeCodexAuthStore(home);
+  const profile = path.join(home, "codex", "work");
+  const sessionDir = path.join(profile, "sessions", "2026", "06", "10");
+  fs.mkdirSync(sessionDir, { recursive: true });
+  fs.writeFileSync(path.join(sessionDir, "rollout-2026-06-10T00-00-00-test.jsonl"), "{}\n");
+
+  const { code, stderr } = await run(["codex", "--profile", "work", "resume"], {
+    AGENT_SWITCH_PROFILE_HOME: home,
+    AGENT_SWITCH_CODEX_AUTH_CHOICE: "first",
+    OPENAI_BASE_URL: "https://api.openai.com",
+    PATH: "",
+    Path: "",
+  });
+
+  assert.equal(code, 1);
+  assert.doesNotMatch(stderr, /resuming latest/);
+  assert.match(stderr, /command not found: codex/);
+});
+
+test("codex --profile requires an interactive auth choice when no scripted choice is provided", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "agent-switch-profile-authchoice-"));
+  const { code, stderr } = await run(["codex", "--profile", "work"], {
+    AGENT_SWITCH_PROFILE_HOME: home,
+    OPENAI_BASE_URL: "https://api.openai.com",
+    PATH: "",
+    Path: "",
+  });
+
+  assert.equal(code, 1);
+  assert.match(stderr, /codex --profile needs an interactive terminal/);
+  assert.doesNotMatch(stderr, /command not found: codex/);
+});
+
+test("plain codex does not open the profile auth menu", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "agent-switch-plain-codex-"));
+  writeCodexAuthStore(home);
+  const { code, stderr } = await run(["codex"], {
+    AGENT_SWITCH_PROFILE_HOME: home,
+    OPENAI_BASE_URL: "https://api.openai.com",
+    PATH: "",
+    Path: "",
+  });
+
+  assert.equal(code, 1);
+  assert.doesNotMatch(stderr, /select auth>/);
+  assert.doesNotMatch(stderr, /agent-switch codex profile/);
   assert.match(stderr, /command not found: codex/);
 });
 

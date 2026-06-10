@@ -159,6 +159,9 @@ This is the release shape used by `scripts/install-agent-switch.js`, so a cloned
 ### Quick Start
 
 ```bash
+# Pick a CLI from a searchable terminal picker
+agent-switch
+
 # Start Claude Code through agent-switch
 agent-switch claude
 
@@ -200,22 +203,71 @@ agent-switch run --upstream https://my.api/v1 --env-var MY_BASE_URL -- my-tool
 
 Captured CLI runs do not open a browser by default. When the delegated CLI exits, Agent Switch prints a Codex handoff summary with the exit code, session id, captured request count, dashboard command, and latest export command.
 
+Running `agent-switch` without a command opens a searchable terminal picker for supported CLIs. Explicit commands such as `agent-switch codex` still start directly without prompting.
+
 ### Multiple CLI Accounts
 
 Profiles isolate a target CLI's account/config directory while keeping the current project directory unchanged.
 
-Supported profile tools:
-
-- `codex` uses `CODEX_HOME`
-- `claude` uses `CLAUDE_CONFIG_DIR`
-- `opencode` uses `OPENCODE_CONFIG_DIR`
-
-Create a profile:
+For Codex, use one command:
 
 ```bash
 agent-switch profile new codex/work
+agent-switch codex --profile work
+```
+
+When `--profile` is present, Agent Switch opens a searchable local Codex auth picker:
+
+```text
+Select Codex auth
+
+Type to search saved auth
+> add auth
+  saved Codex auth account
+  remove auth
+```
+
+Choosing `add auth` starts the normal `codex login` flow in a temporary login directory, then saves the resulting auth into the local account store:
+
+```text
+~/.agent-switch/profiles/codex/.accounts/
+```
+
+Choosing an existing saved auth injects that account into the requested runtime profile before Codex starts:
+
+```text
+~/.agent-switch/profiles/codex/work/auth.json
+```
+
+Then Codex launches in the current project directory with:
+
+```text
+CODEX_HOME=~/.agent-switch/profiles/codex/work
+```
+
+This means `agent-switch codex --profile work` uses the selected Codex account while staying in the current project folder. If the profile already has saved Codex sessions and no extra Codex arguments were supplied, Agent Switch resumes the latest session by default with `resume --last`. If the profile has no sessions yet, it starts a new Codex session.
+
+To choose a session yourself, pass Codex's resume command through:
+
+```bash
+agent-switch codex --profile work resume
+agent-switch codex --profile work resume --all
+agent-switch codex --profile work resume <session-id>
+```
+
+`resume` shows Codex's resume picker for the current working directory. `resume --all` shows sessions across directories.
+
+Plain `agent-switch codex` is not changed and continues to use the normal default Codex account/config.
+
+Claude Code and OpenCode profiles remain simple isolated config directories:
+
+```bash
 agent-switch profile new claude/work
+agent-switch claude --profile work
+agent-switch claude --resume
+
 agent-switch profile new opencode/work
+agent-switch opencode --profile work
 ```
 
 Profile directories are stored under:
@@ -224,33 +276,9 @@ Profile directories are stored under:
 ~/.agent-switch/profiles/<tool>/<name>
 ```
 
-Use a profile:
+Shared profiles may link or copy safe files such as `config.toml`, `settings.json`, skills, commands, and plugins. Agent Switch never shares known auth/session files such as Codex `auth.json`, Claude `.credentials.json`, session folders, or history files unless a Codex auth is explicitly selected from the local auth menu.
 
-```bash
-agent-switch codex --profile work
-agent-switch claude --profile work
-agent-switch opencode --profile work
-```
-
-The first time you use a new profile, log in inside that wrapped CLI just as you normally would. For example, create `codex/work`, run `agent-switch codex --profile work`, then complete Codex login for that isolated `CODEX_HOME`.
-
-You can also create a profile that shares non-secret defaults from your normal CLI home:
-
-```bash
-agent-switch profile new codex/work --shared
-```
-
-Shared profiles may link or copy safe files such as `config.toml`, `settings.json`, skills, commands, and plugins. Agent Switch never shares known auth/session files such as Codex `auth.json`, Claude `.credentials.json`, session folders, or history files.
-
-List, inspect, and remove profiles:
-
-```bash
-agent-switch profile list
-agent-switch profile path codex/work
-agent-switch profile delete codex/work --yes
-```
-
-No profile flag means no isolation: `agent-switch codex`, `agent-switch claude`, and `agent-switch opencode` continue to use each CLI's default account/config exactly as before.
+Treat `~/.agent-switch/profiles/codex/.accounts` as sensitive local data because it stores saved Codex auth snapshots for injection.
 
 ### Headroom Compact
 
@@ -406,7 +434,7 @@ agent-switch rm <session>
 | `dashboard` | `agent-switch dashboard` | Open the dashboard over saved logs |
 | `webui` | `agent-switch webui` | Alias for `dashboard` |
 | `view` | `agent-switch view` | Backward-compatible alias for `dashboard` |
-| `profile` | `agent-switch profile new codex/work` | Manage isolated CLI account/config profiles |
+| `profile` | `agent-switch profile new claude/work` | Manage isolated CLI account/config profiles |
 | `install` | `agent-switch install` | Print local install and update commands |
 
 ### Log and Proxy Commands
@@ -433,7 +461,7 @@ agent-switch rm <session>
 | `--no-open` | Keep a dashboard command headless, useful for tests or remote shells |
 | `--no-redact` | Save auth headers without masking them |
 | `--no-mcp` | Do not inject Agent Switch MCP tools into Claude Code |
-| `--profile <name|tool/name>` | Run Claude Code, Codex, or OpenCode with an isolated account/config profile |
+| `--profile <name|tool/name>` | Codex auth picker/injection, or isolated Claude Code/OpenCode config profile |
 | `--env-var <name>` | Override which environment variable receives the proxy URL |
 
 ## Supported Providers

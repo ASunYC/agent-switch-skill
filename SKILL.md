@@ -53,6 +53,8 @@ Use one command to delegate work to another coding CLI with capture enabled:
 agent-switch claude
 ```
 
+If the user runs `agent-switch` without a provider command, show a searchable TTY picker for supported CLIs. If the user names a provider explicitly, such as `agent-switch codex`, start that provider directly without opening a picker.
+
 Pass arguments through normally:
 
 ```bash
@@ -81,36 +83,51 @@ Use profiles when the user wants multiple local accounts for Codex, Claude Code,
 
 Supported profile mappings:
 
-- Codex: `CODEX_HOME=~/.agent-switch/profiles/codex/<name>`
+- Codex: `CODEX_HOME=~/.agent-switch/profiles/codex/<name>`, with saved auth selected from `~/.agent-switch/profiles/codex/.accounts`
 - Claude Code and Claude-based providers: `CLAUDE_CONFIG_DIR=~/.agent-switch/profiles/claude/<name>`
 - OpenCode: `OPENCODE_CONFIG_DIR=~/.agent-switch/profiles/opencode/<name>`
 
-Create profiles explicitly:
+For Codex, users can create the profile explicitly, or simply run with `--profile` and let agent-switch create the missing profile before auth selection:
 
 ```bash
 agent-switch profile new codex/work
-agent-switch profile new claude/work
-agent-switch profile new opencode/work
-```
-
-Use profiles with wrapped CLIs:
-
-```bash
 agent-switch codex --profile work
-agent-switch claude --profile work
-agent-switch opencode --profile work
 ```
 
-If the user passes only `--profile work`, infer the tool from the provider. `agent-switch codex --profile work` means `codex/work`; `agent-switch claude --profile work` means `claude/work`. For Kimi, Bedrock, and Vertex, use Claude profiles because those providers run the `claude` binary.
+When `agent-switch codex --profile work` runs, agent-switch must:
 
-If the profile does not exist, tell the user to create it first. Do not create profiles silently during a run.
+- create `~/.agent-switch/profiles/codex/work` if needed,
+- read saved accounts from `~/.agent-switch/profiles/codex/.accounts`,
+- show a searchable TTY picker with `add auth`, saved auth accounts, and `remove auth`,
+- run real `codex login` only when the user chooses `add auth`,
+- save the resulting auth into the account store,
+- inject the selected saved auth into `~/.agent-switch/profiles/codex/work/auth.json`,
+- then launch Codex in the current working directory with `CODEX_HOME` set to the profile directory.
 
-The first use of a new profile may require the target CLI to log in again. Let that CLI handle its normal login flow inside the isolated profile.
+Selecting `remove auth` must show the current saved auth list and remove the chosen saved auth from the account store.
 
-For safe shared defaults, use:
+When `agent-switch codex --profile work` is run with no extra Codex arguments and the profile already has saved Codex sessions, default to resuming the latest session by passing `resume --last` to Codex. If the profile has no saved sessions, start a new Codex session.
+
+To inspect or choose sessions, pass Codex's resume command through:
 
 ```bash
-agent-switch profile new codex/work --shared
+agent-switch codex --profile work resume
+agent-switch codex --profile work resume --all
+agent-switch codex --profile work resume <session-id>
+```
+
+`resume` shows Codex's picker for sessions in the current working directory. `resume --all` shows sessions across directories.
+
+This Codex menu must run only when `--profile` is present. Plain `agent-switch codex` must preserve the current default behavior and must not inspect, prompt for, or inject saved profile auth.
+
+For Claude Code and OpenCode, profiles remain simple config directories. Create them explicitly:
+
+```bash
+agent-switch profile new claude/work
+agent-switch claude --profile work
+agent-switch claude --resume
+agent-switch profile new opencode/work
+agent-switch opencode --profile work
 ```
 
 Shared mode may link or copy non-secret defaults such as Codex `config.toml`, Claude `settings.json`, skills, commands, agents, and plugins. It must not copy known auth/session files such as Codex `auth.json`, Claude `.credentials.json`, `sessions`, `projects`, `todos`, or history files.
@@ -124,6 +141,8 @@ agent-switch profile delete codex/work --yes
 ```
 
 If no `--profile` flag is present, preserve the current default behavior and let the CLI use its normal global account/config.
+
+Treat `~/.agent-switch/profiles/codex/.accounts` as sensitive local data because it stores Codex auth snapshots for injection.
 
 ## Headroom Compact Mode
 
