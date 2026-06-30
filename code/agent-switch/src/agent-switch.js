@@ -21,7 +21,7 @@ USAGE
   agent-switch profile list [tool]
   agent-switch compact doctor         Check Headroom compact dependencies
   agent-switch compact install        Print Headroom install commands
-  agent-switch dashboard              Open the dashboard over saved logs
+  agent-switch dashboard              View saved logs (no capture, browse-only)
   agent-switch webui                  Alias for dashboard
   agent-switch view                   Alias for dashboard
   agent-switch install                Print install/update commands
@@ -30,12 +30,14 @@ Commands such as export, migrate, repack, rm, proxy, profile, compact,
 --provider, --profile, --upstream, --dir, --open, --no-open, --no-mcp, and
 --compact are handled by agent-switch directly.
 
-Captured CLI runs do not open a browser by default. Use \`agent-switch dashboard\`
-or \`agent-switch webui\` when you want the web UI.
+The dashboard is already running during captured CLI runs (e.g. \`agent-switch claude\`).
+The URL is printed on startup; open it in another browser tab, or use \`--open\` to auto-open.
+Use \`agent-switch dashboard\` (or \`webui\`) later to browse saved logs without starting capture.
 
 Compact mode is explicit and only supports Claude Code based providers in v1:
 
   agent-switch claude --compact
+  agent-switch claude --open          # auto-open the dashboard in your browser
 
 Profiles isolate local CLI accounts/config without changing the working dir:
 

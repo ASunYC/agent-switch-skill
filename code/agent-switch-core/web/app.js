@@ -43,7 +43,152 @@ const state = {
   hideNoise: true,
   sessionMeta: new Map(),
   loadToken: 0,
+  profileName: null,
+  compactEnabled: false,
+  sessionStats: null,
 };
+
+// ---- Segment system (inspired by Coralline / Powerlevel10k) --------------
+
+const SEGMENTS = {
+  sessions: {
+    title: "Sessions",
+    icon: "📦",
+    order: 0,
+    render() {
+      const sessions = [...new Set(state.entries.map((e) => e.session).filter(Boolean))];
+      const count = sessions.length || (state.session ? 1 : 0);
+      const live = state.live ? `<span class="seg-live">live</span>` : "";
+      return `<div class="seg-value">${count} active ${live}</div>`;
+    },
+  },
+  statusCodes: {
+    title: "Status",
+    icon: "📊",
+    order: 1,
+    render() {
+      const signal = state.entries.filter((e) => !isNoise(e));
+      const ok = signal.filter((e) => statusClass(e.status) === "ok").length;
+      const err4 = signal.filter((e) => statusClass(e.status) === "4xx").length;
+      const err5 = signal.filter((e) => statusClass(e.status) === "5xx" || e.error).length;
+      const total = signal.length;
+      const pct = total ? Math.round((ok / total) * 100) : 0;
+      const barColor = err5 ? "var(--del)" : err4 ? "var(--cache)" : "var(--add)";
+      return `
+        <div class="seg-bar"><div style="width:${pct}%;background:${barColor}"></div></div>
+        <div class="seg-row">
+          <span class="seg-ok">${ok} ok</span>
+          ${err4 ? `<span class="seg-warn">${err4} 4xx</span>` : ""}
+          ${err5 ? `<span class="seg-err">${err5} err</span>` : ""}
+          <span class="seg-muted">${total} total</span>
+        </div>`;
+    },
+  },
+  profile: {
+    title: "Profile",
+    icon: "👤",
+    order: 2,
+    render() {
+      const name = state.profileName || "default";
+      return `<div class="seg-value">${esc(name)}</div>`;
+    },
+  },
+  compact: {
+    title: "Compact",
+    icon: "🗜",
+    order: 3,
+    render() {
+      const compactEntries = state.entries.filter((e) => e.compact?.enabled);
+      if (!compactEntries.length && !state.compactEnabled) {
+        return `<div class="seg-value seg-muted">off</div>`;
+      }
+      const compressed = compactEntries.filter((e) => e.compact?.compressed);
+      const tokensSaved = compactEntries.reduce((s, e) => s + (e.compact?.tokensSaved || 0), 0);
+      const avgRatio = compressed.length
+        ? compressed.reduce((s, e) => s + (e.compact?.ratio ?? 1), 0) / compressed.length
+        : null;
+      const ratioPct = avgRatio != null ? Math.round((1 - avgRatio) * 100) : 0;
+      return `
+        <div class="seg-value">${compressed.length ? `${ratioPct}% saved` : "on"}</div>
+        <div class="seg-row">
+          <span class="seg-muted">${compressed.length}/${compactEntries.length} compressed</span>
+          ${tokensSaved ? `<span class="seg-ok">${fmt(tokensSaved)} tok saved</span>` : ""}
+        </div>`;
+    },
+  },
+  latency: {
+    title: "Latency",
+    icon: "⏱",
+    order: 4,
+    render() {
+      const withLatency = state.entries.filter((e) => e.latencyMs != null);
+      if (!withLatency.length) return `<div class="seg-value seg-muted">no data</div>`;
+      const latencies = withLatency.map((e) => e.latencyMs).sort((a, b) => a - b);
+      const avg = Math.round(latencies.reduce((s, l) => s + l, 0) / latencies.length);
+      const p95 = latencies[Math.floor(latencies.length * 0.95)] ?? avg;
+      return `
+        <div class="seg-value">${avg}ms</div>
+        <div class="seg-row"><span class="seg-muted">avg</span> <span class="seg-muted">p95 ${p95}ms</span></div>`;
+    },
+  },
+  cost: {
+    title: "Cost",
+    icon: "💰",
+    order: 5,
+    render() {
+      const stats = state.sessionStats;
+      if (!stats || stats.totalCost === 0) return `<div class="seg-value seg-muted">—</div>`;
+      return `<div class="seg-value">$${stats.totalCost.toFixed(4)}</div>
+        <div class="seg-row"><span class="seg-muted">${stats.requestsWithUsage}/${stats.totalRequests} priced</span></div>`;
+    },
+  },
+  tokens: {
+    title: "Tokens",
+    icon: "📝",
+    order: 6,
+    render() {
+      const stats = state.sessionStats;
+      if (!stats || (!stats.totalTokens && !stats.inputTokens && !stats.outputTokens)) {
+        return `<div class="seg-value seg-muted">no data</div>`;
+      }
+      const total = fmt(stats.totalTokens);
+      const input = fmt(stats.inputTokens);
+      const output = fmt(stats.outputTokens);
+      const cache = stats.cacheReadTokens ? fmt(stats.cacheReadTokens) : null;
+      return `
+        <div class="seg-value">${total}</div>
+        <div class="seg-row">
+          <span class="seg-muted">in:${input}</span>
+          <span class="seg-muted">out:${output}</span>
+          ${cache ? `<span class="seg-ok">cache:${cache}</span>` : ""}
+        </div>`;
+    },
+  },
+};
+
+const DEFAULT_SEGMENT_ORDER = ["sessions", "statusCodes", "profile", "compact", "tokens"];
+const SEGMENT_CONFIG_KEY = "agent-switch-segment-config";
+
+function loadSegmentConfig() {
+  try {
+    const raw = localStorage.getItem(SEGMENT_CONFIG_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return { enabled: [...DEFAULT_SEGMENT_ORDER], layout: "grid" };
+}
+
+function saveSegmentConfig(cfg) {
+  try { localStorage.setItem(SEGMENT_CONFIG_KEY, JSON.stringify(cfg)); } catch {}
+}
+
+function getEnabledSegments() {
+  const cfg = loadSegmentConfig();
+  const ids = cfg.enabled || DEFAULT_SEGMENT_ORDER;
+  return ids
+    .filter((id) => SEGMENTS[id])
+    .sort((a, b) => (SEGMENTS[a].order ?? 99) - (SEGMENTS[b].order ?? 99))
+    .map((id) => ({ id, ...SEGMENTS[id] }));
+}
 
 async function api(path) {
   const r = await fetch(path);
@@ -83,6 +228,15 @@ async function loadList() {
     else renderEmptyDetail("No requests in this session yet.");
   }
   renderList();
+  loadStats();
+}
+
+async function loadStats() {
+  if (!state.session) return;
+  try {
+    state.sessionStats = await api("/api/stats?session=" + encodeURIComponent(state.session));
+    renderMonitorOverview(state.detail);
+  } catch {}
 }
 
 function bestEntry(entries) {
@@ -294,10 +448,24 @@ function renderCurrentSummary() {
 function renderMonitorOverview(rec = null) {
   const target = $("#monitorOverview");
   if (!target) return;
+
+  // Segment grid (top) + per-request metrics (below, when a request is selected)
+  const segments = getEnabledSegments();
+  const segHtml = segments.map((seg) =>
+    `<div class="segment"><div class="seg-header">${seg.icon} ${esc(seg.title)}</div>${seg.render()}</div>`
+  ).join("");
+
   if (!rec) {
-    target.innerHTML = `<span class="overview-empty">No overview yet</span>`;
+    target.innerHTML = `
+      <div class="segment-grid">${segHtml}</div>
+      <div class="overview-actions">
+        <button class="seg-settings-btn" id="segSettingsBtn" title="Configure segments">⚙ segments</button>
+        <span class="overview-empty">Select a request for details</span>
+      </div>`;
+    bindSegSettingsBtn();
     return;
   }
+
   const parsed = rec.parsed || {};
   const c = parsed.cost || {};
   const u = parsed.response?.usage || {};
@@ -321,7 +489,14 @@ function renderMonitorOverview(rec = null) {
     return `<div class="overview-metric${cls}"><span>${esc(k)}</span><b>${esc(v)}</b></div>`;
   }).join("");
   const dl = (f) => `<a class="dl" href="/api/export?id=${encodeURIComponent(rec.id)}&format=${f}">${f}</a>`;
-  target.innerHTML = `<div class="overview-metrics">${metrics}</div><div class="overview-actions"><span>Export</span>${dl("md")}${dl("json")}${dl("har")}${dl("raw")}</div>`;
+  target.innerHTML = `
+    <div class="segment-grid">${segHtml}</div>
+    <div class="overview-metrics">${metrics}</div>
+    <div class="overview-actions">
+      <button class="seg-settings-btn" id="segSettingsBtn" title="Configure segments">⚙ segments</button>
+      <span>Export</span>${dl("md")}${dl("json")}${dl("har")}${dl("raw")}
+    </div>`;
+  bindSegSettingsBtn();
 }
 
 function paneHtml(rec, tab) {
@@ -527,6 +702,83 @@ function diffBlock(x, kind) {
   return `<div class="block diff-${kind}"><div class="h"><span>${esc(x.label)}</span><span>${tag}</span></div><pre>${esc((x.text || "").slice(0, 4000))}</pre></div>`;
 }
 
+// ---- segment settings modal ----------------------------------------------
+
+function bindSegSettingsBtn() {
+  const btn = $("#segSettingsBtn");
+  if (btn) btn.onclick = openSegmentSettings;
+}
+
+function openSegmentSettings() {
+  const cfg = loadSegmentConfig();
+  const enabled = cfg.enabled || DEFAULT_SEGMENT_ORDER;
+
+  const overlay = el("div", { className: "seg-overlay" });
+  const modal = el("div", { className: "seg-modal" });
+
+  const title = el("h2", { textContent: "Configure Segments" });
+  const subtitle = el("p", { className: "seg-subtitle", textContent: "Choose which info segments appear in the overview bar." });
+
+  const list = el("div", { className: "seg-list" });
+  const allIds = Object.keys(SEGMENTS).sort((a, b) => (SEGMENTS[a].order ?? 99) - (SEGMENTS[b].order ?? 99));
+  const checks = {};
+  for (const id of allIds) {
+    const seg = SEGMENTS[id];
+    const row = el("label", { className: "seg-check" });
+    const cb = el("input", { type: "checkbox" });
+    cb.checked = enabled.includes(id);
+    cb.dataset.segId = id;
+    checks[id] = cb;
+    const label = el("span", { className: "seg-check-label" },
+      el("span", { textContent: `${seg.icon} ${seg.title}` }),
+      el("span", { className: "seg-check-desc", textContent: segDesc(id) })
+    );
+    row.append(cb, label);
+    list.append(row);
+  }
+
+  const layoutLabel = el("div", { className: "seg-layout-label", textContent: "Layout" });
+  const layoutRow = el("div", { className: "seg-layout-row" });
+  for (const l of ["grid", "bar"]) {
+    const opt = el("label", { className: "seg-layout-opt" });
+    const radio = el("input", { type: "radio", name: "seg-layout", value: l });
+    radio.checked = (cfg.layout || "grid") === l;
+    opt.append(radio, el("span", { textContent: l === "grid" ? "Grid (2×N)" : "Bar (1×N)" }));
+    layoutRow.append(opt);
+  }
+
+  const actions = el("div", { className: "seg-actions" });
+  const cancelBtn = el("button", { textContent: "Cancel" });
+  cancelBtn.onclick = () => overlay.remove();
+  const saveBtn = el("button", { className: "on", textContent: "Save" });
+  saveBtn.onclick = () => {
+    const newEnabled = Object.entries(checks).filter(([, cb]) => cb.checked).map(([id]) => id);
+    const layout = layoutRow.querySelector("input:checked")?.value || "grid";
+    saveSegmentConfig({ enabled: newEnabled, layout });
+    overlay.remove();
+    renderMonitorOverview(state.detail);
+  };
+  actions.append(cancelBtn, saveBtn);
+
+  modal.append(title, subtitle, list, layoutLabel, layoutRow, actions);
+  overlay.append(modal);
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  document.body.append(overlay);
+}
+
+function segDesc(id) {
+  const desc = {
+    sessions: "Active capture session count and live status",
+    statusCodes: "Request success rate with status code breakdown",
+    profile: "Current CLI profile name",
+    compact: "Headroom compression ratio and token savings",
+    latency: "Average and p95 request latency",
+    cost: "Estimated API cost from captured requests",
+    tokens: "Cumulative input, output, and cache tokens for this session",
+  };
+  return desc[id] || "";
+}
+
 // ---- live + wiring -------------------------------------------------------
 
 function connectStream() {
@@ -615,4 +867,12 @@ $("#diffBtn").onclick = (e) => {
   if (!state.diff && state.selected) loadDetail(state.selected);
 };
 
-loadSessions().then(connectStream);
+async function loadMeta() {
+  try {
+    const data = await api("/api/meta");
+    state.profileName = data.profileName || null;
+    state.compactEnabled = Boolean(data.compactEnabled);
+  } catch {}
+}
+
+loadMeta().then(() => loadSessions()).then(connectStream);

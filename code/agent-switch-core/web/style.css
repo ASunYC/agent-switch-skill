@@ -386,4 +386,206 @@ a.dl { color: var(--accent); margin-right: 4px; }
   .overview-actions {
     justify-content: flex-start;
   }
+  .segment-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- Segment grid (Coralline-inspired) --------------------------------- */
+
+.segment-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 8px;
+}
+.segment-grid.layout-bar {
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 6px;
+}
+
+.segment {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  min-width: 0;
+  transition: border-color 0.15s;
+}
+.segment:hover {
+  border-color: var(--accent);
+}
+
+.seg-header {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.seg-value {
+  font-size: 16px;
+  font-weight: 700;
+  font-family: var(--mono);
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.seg-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.seg-ok { color: var(--add); }
+.seg-warn { color: var(--cache); }
+.seg-err { color: var(--del); }
+.seg-muted { color: var(--muted); }
+.seg-live {
+  font-size: 10px;
+  color: #0e1116;
+  background: var(--accent);
+  padding: 0 5px;
+  border-radius: 8px;
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+.seg-bar {
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+.seg-bar > div {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+/* ---- Segment settings modal -------------------------------------------- */
+
+.seg-settings-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.seg-settings-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.seg-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.seg-modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px 24px;
+  min-width: 340px;
+  max-width: 440px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.seg-modal h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  color: var(--fg);
+}
+.seg-subtitle {
+  margin: 0 0 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.seg-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.seg-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.seg-check:hover { border-color: var(--accent); }
+.seg-check input[type="checkbox"] {
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+.seg-check-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.seg-check-label > span:first-child {
+  font-size: 13px;
+  color: var(--fg);
+}
+.seg-check-desc {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.seg-layout-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-bottom: 6px;
+}
+.seg-layout-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.seg-layout-opt {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--fg);
+  cursor: pointer;
+}
+.seg-layout-opt input { accent-color: var(--accent); }
+
+.seg-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.seg-actions button {
+  padding: 6px 16px;
+  font-size: 13px;
 }

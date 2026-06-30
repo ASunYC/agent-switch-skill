@@ -48,7 +48,7 @@ USAGE
   agent-switch kimi   [args...]      Inspect Kimi (Moonshot, via Claude Code)
   agent-switch opencode [args...]    Inspect OpenCode
   agent-switch run [--provider P] -- <cmd...>   Inspect any client
-  agent-switch dashboard             Open the dashboard over saved logs
+  agent-switch dashboard             View saved logs (no capture, browse-only)
   agent-switch webui                 Alias for dashboard
   agent-switch view                  Alias for dashboard
   agent-switch migrate               Copy ./.agent-switch logs (this project only) to the global store
@@ -72,8 +72,8 @@ OPTIONS
   --port <n>          Dashboard port (default: auto)
   --proxy-port <n>    Proxy port (default: auto)
   --dir <path>        Log directory (default: ~/.agent-switch/sessions/<full-path>-<hash>)
-  --open              Open the dashboard browser for this run
-  --no-open           Keep dashboard server headless (default for captured CLI runs)
+  --open              Auto-open the dashboard in the browser (default: headless during captured CLI runs)
+  --no-open           Keep dashboard server headless (the URL is printed on startup so you can open it manually)
   --no-redact         Do NOT mask auth tokens in saved logs
   --no-mcp            Do NOT inject agent-switch's inspection tools into Claude Code
   --profile <name|tool/name>
@@ -93,10 +93,12 @@ OPTIONS
   -v, --version       Show version
 
 EXAMPLES
-  agent-switch claude              # capture only; does not open a browser
+  agent-switch claude              # capture only; dashboard URL is printed, open it in another browser tab
+  agent-switch claude --open       # capture + auto-open the dashboard in your browser
   agent-switch claude --compact    # compress older Claude context through Headroom
   agent-switch compact doctor
-  agent-switch dashboard           # open the saved-log dashboard
+  agent-switch dashboard           # open the saved-log dashboard (no capture, browse past sessions)
+  agent-switch webui               # alias for dashboard; same as above
   agent-switch codex
   agent-switch profile new codex/work     # create a Codex workspace/profile
   agent-switch codex --profile work  # choose auth, then resume latest session if one exists
@@ -922,7 +924,7 @@ async function wrap(command, args, opts) {
 
   const store = new Store({ root: opts.dir, redact: opts.redact, format: provider.format });
   const proxy = createProxy({ upstream, store, compact: opts.compact });
-  const dashboard = createServer({ roots: opts.readRoots, store });
+  const dashboard = createServer({ roots: opts.readRoots, store, meta: { profileName: opts.profile || null, compactEnabled: opts.compact.enabled } });
 
   const proxyPort = await listen(proxy, opts.proxyPort);
   const dashPort = await listen(dashboard, opts.port);

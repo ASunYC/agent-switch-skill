@@ -21,7 +21,8 @@ It helps you:
 - Install a ready-to-use `agent-switch` CLI from the skill directory
 - Start another coding CLI with one command, such as `agent-switch claude`
 - Capture prompts, tool calls, responses, status codes, and request metadata
-- Open a local dashboard over saved agent conversations only when requested
+- Open a local dashboard with modular segments over captured agent conversations
+- See live session-wide totals: request count, status rate, tokens (in/out/cache), cost, and compact savings
 - Export captured requests as Markdown, raw HTTP, JSON, or HAR
 - Return a concise handoff summary back to the current Codex session
 - Run proxy-only mode for IDEs or custom OpenAI/Anthropic-compatible clients
@@ -62,7 +63,8 @@ The installer installs the bundled CLI package from `cli/`, verifies `agent-swit
 
 - **Agent handoff**: run another coding CLI and return to Codex when it exits
 - **Conversation capture**: inspect model-facing requests and responses
-- **Dashboard**: browse saved logs in a local web UI
+- **Dashboard with segments**: browse saved logs in a local web UI with configurable info segments
+- **Session-wide stats**: live totals for tokens (input/output/cache), cost, status rate, and compact savings
 - **Exports**: write captured requests as `raw`, `md`, `json`, or `har`
 - **Provider wrappers**: support Claude Code, Codex, CodeWhale, DeepSeek-TUI legacy shims, Kimi, OpenCode, and compatible gateways
 - **CLI profiles**: isolate Claude Code, Codex, and OpenCode accounts/configs under `~/.agent-switch/profiles`
@@ -162,7 +164,10 @@ This is the release shape used by `scripts/install-agent-switch.js`, so a cloned
 # Pick a CLI from a searchable terminal picker
 agent-switch
 
-# Start Claude Code through agent-switch
+# Start Claude Code through agent-switch (auto-open the dashboard)
+agent-switch claude --open
+
+# Start Claude Code through agent-switch (headless; URL is printed)
 agent-switch claude
 
 # Start Codex through agent-switch
@@ -177,10 +182,23 @@ agent-switch deepseek
 # Start Claude Code against Kimi / Moonshot
 agent-switch kimi
 
-# Open the saved-log dashboard
+# Browse saved logs after a capture run (no capture, no CLI launched)
 agent-switch dashboard
 agent-switch webui
 ```
+
+### Dashboard During a Capture Run
+
+When you run `agent-switch claude` (or any provider), the dashboard server starts in the background and prints its URL on startup:
+
+```text
+  * agent-switch watching Claude Code -> https://api.anthropic.com
+    dashboard: http://127.0.0.1:54321
+```
+
+You can open that URL in another browser tab at any time while the CLI is running - you do not need to exit the CLI. Use `--open` to auto-open the browser when capture starts, or `--no-open` to keep it headless (the URL is still printed).
+
+Use `agent-switch dashboard` (or the `webui` / `view` aliases) only when you want to browse previously captured sessions without starting a new capture run.
 
 ### Run Another CLI
 
@@ -400,6 +418,34 @@ agent-switch export <session>/<seq> --format json
 agent-switch export <session>/<seq> --format har
 ```
 
+### Dashboard Segments
+
+The dashboard overview bar is built from independent, configurable segments inspired by terminal statuslines like Powerlevel10k / Coralline. Each segment renders one piece of session information and can be turned on or off individually.
+
+The default segments are:
+
+| Segment | Shows |
+|---|---|
+| 📦 Sessions | Active capture session count and live status |
+| 📊 Status | Request success rate with a colored bar and status code breakdown |
+| 👤 Profile | The current CLI profile name (e.g. `claude/work`) |
+| 🗜 Compact | Headroom compression ratio and cumulative tokens saved |
+| 📝 Tokens | Session-wide totals: input, output, cache-read, and combined token count |
+
+Two additional segments are available but off by default:
+
+| Segment | Shows |
+|---|---|
+| ⏱ Latency | Average and p95 request latency |
+| 💰 Cost | Estimated API cost from priced requests |
+
+Click the **⚙ segments** button in the overview bar to open the segment settings modal. There you can:
+
+- Toggle individual segments on or off
+- Pick a layout: **Grid** (cards wrap into a responsive grid) or **Bar** (single row)
+
+Your choices are saved to `localStorage` and persist across dashboard sessions. The per-request metrics (model, status, input/output tokens, cost, stop reason, export links) continue to render below the segment bar whenever a single request is selected.
+
 ### Manage Stored Logs
 
 ```bash
@@ -457,8 +503,8 @@ agent-switch rm <session>
 | `--port <n>` | Set the dashboard port |
 | `--proxy-port <n>` | Set the capture proxy port |
 | `--dir <path>` | Set the log directory |
-| `--open` | Open the dashboard browser during a captured CLI run |
-| `--no-open` | Keep a dashboard command headless, useful for tests or remote shells |
+| `--open` | Auto-open the dashboard in the browser during a captured CLI run |
+| `--no-open` | Keep the dashboard headless; the URL is still printed so you can open it manually |
 | `--no-redact` | Save auth headers without masking them |
 | `--no-mcp` | Do not inject Agent Switch MCP tools into Claude Code |
 | `--profile <name|tool/name>` | Codex auth picker/injection, or isolated Claude Code/OpenCode config profile |
@@ -607,6 +653,10 @@ You can also remove the local `~/.agent-switch` directory manually if you want t
 - Added provider wrappers for common coding CLIs
 - Added dashboard, export, migration, repack, and cleanup commands
 - Added tests for core capture and CLI behavior
+- Added Headroom compact mode for Claude Code providers
+- Added CLI profile isolation for Codex, Claude Code, and OpenCode
+- Added modular dashboard segments (Sessions, Status, Profile, Compact, Tokens, Latency, Cost) with a settings modal and Grid/Bar layouts
+- Added `/api/stats` endpoint and a Tokens segment showing session-wide input/output/cache totals
 
 ## Contributing
 

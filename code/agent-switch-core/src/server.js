@@ -17,7 +17,7 @@ const WEB_DIR = path.join(__dirname, "..", "web");
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css" };
 
 // `store` is present in live (`agent-switch claude`) mode; otherwise we read from disk.
-export function createServer({ roots, store }) {
+export function createServer({ roots, store, meta }) {
   const sseClients = new Set();
 
   if (store) {
@@ -36,10 +36,12 @@ export function createServer({ roots, store }) {
     try {
       if (p === "/api/sessions") return json(res, apiSessions(roots, store));
       if (p === "/api/requests") return json(res, apiRequests(roots, store, url));
+      if (p === "/api/stats") return json(res, apiStats(roots, store, url));
       if (p.startsWith("/api/request/")) return json(res, apiRequest(roots, store, decodeURIComponent(p.slice("/api/request/".length))));
       if (p === "/api/diff") return json(res, apiDiff(roots, store, url));
       if (p === "/api/export") return apiExport(roots, store, url, res);
       if (p === "/api/stream") return stream(res, sseClients);
+      if (p === "/api/meta") return json(res, apiMeta(meta));
       return serveStatic(p, res);
     } catch (e) {
       json(res, { error: e.message }, 500);
@@ -66,6 +68,56 @@ function apiRequests(roots, store, url) {
   if (store && (!session || session === store.sessionId)) return { entries: store.list() };
   if (!session) return { entries: [] };
   return { entries: loadSessionMulti(roots, session).map(summarize) };
+}
+
+function apiStats(roots, store, url) {
+  const session = url.searchParams.get("session");
+  let entries;
+  if (store && (!session || session === store.sessionId)) {
+    entries = store.entries || [];
+  } else if (session) {
+    entries = loadSessionMulti(roots, session);
+  } else {
+    entries = [];
+  }
+
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cacheReadTokens = 0;
+  let totalCost = 0;
+  let requestsWithUsage = 0;
+
+  for (const rec of entries) {
+    const fmt = detectFormat(rec);
+    const A = getAdapter(fmt);
+    const body = rec.request?.body || {};
+    const response = rec.response?.raw ? A.reassemble(rec.response.raw) : rec.response;
+    const usage = response?.usage || {};
+
+    const estInput = A.estimateTokens(body);
+    if (usage.input_tokens != null || usage.output_tokens != null) {
+      inputTokens += usage.input_tokens || 0;
+      outputTokens += usage.output_tokens || 0;
+      cacheReadTokens += usage.cache_read_input_tokens || 0;
+      requestsWithUsage++;
+    } else if (estInput) {
+      inputTokens += estInput;
+    }
+
+    const cost = A.cost(body.model, usage);
+    totalCost += cost.usd || 0;
+  }
+
+  return {
+    session: session || null,
+    totalRequests: entries.length,
+    requestsWithUsage,
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    totalTokens: inputTokens + outputTokens,
+    totalCost,
+  };
 }
 
 function apiRequest(roots, store, id) {
@@ -112,6 +164,13 @@ function apiExport(roots, store, url, res) {
   const { contentType, ext, body } = renderExport(rec, format);
   res.writeHead(200, { "content-type": contentType, ...attach(id, ext) });
   return res.end(body);
+}
+
+function apiMeta(meta) {
+  return {
+    profileName: meta?.profileName || null,
+    compactEnabled: Boolean(meta?.compactEnabled),
+  };
 }
 
 // ---- helpers -------------------------------------------------------------
