@@ -8,6 +8,8 @@
 
 **Author**: [ASunYC](https://github.com/ASunYC)
 
+<img src="help.gif" alt="agent-switch demo" width="640">
+
 </div>
 
 ---
