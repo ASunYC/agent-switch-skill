@@ -459,7 +459,11 @@ function interactiveSelect({ title, hint = "Type to search", right = "", items }
     let selected = 0;
     let renderedLines = 0;
     let done = false;
-    const dataListenersBefore = new Set(input.listeners("data"));
+
+    // Resume stdin in case a previous releaseStdinForChild() paused it (e.g. after a
+    // child process spawn). Without this, the second interactiveSelect call (used by
+    // the "remove auth" flow) renders the menu but never receives keypresses.
+    input.resume();
 
     readline.emitKeypressEvents(input);
     const wasRaw = Boolean(input.isRaw);
@@ -468,10 +472,6 @@ function interactiveSelect({ title, hint = "Type to search", right = "", items }
     const cleanup = () => {
       input.off("keypress", onKeypress);
       if (input.isTTY) input.setRawMode(wasRaw);
-      for (const listener of input.listeners("data")) {
-        if (!dataListenersBefore.has(listener)) input.off("data", listener);
-      }
-      input.pause();
       output.write("\x1b[?25h");
     };
 
