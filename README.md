@@ -178,6 +178,10 @@ agent-switch codex
 # Start CodeWhale through agent-switch
 agent-switch codewhale
 
+# Chat with local Hermes API
+agent-switch hermes --health
+agent-switch hermes "hello"
+
 # Start DeepSeek-TUI legacy shim through agent-switch
 agent-switch deepseek
 
@@ -380,6 +384,19 @@ codewhale doctor
 agent-switch codewhale
 ```
 
+For Codex on Windows, Agent Switch first tries the real `codex` executable on `PATH`, then checks the desktop install path:
+
+```text
+%LOCALAPPDATA%\OpenAI\Codex\bin\codex.exe
+```
+
+This avoids accidentally launching a Microsoft Store `WindowsApps` alias that looks like `codex.exe` but is not the Codex CLI. If `agent-switch codex` still reports `command not found: codex`, install or repair the Codex CLI, reopen the terminal, and verify:
+
+```bash
+codex --help
+agent-switch codex
+```
+
 ### Local Upstream Not Reachable
 
 If `agent-switch claude` says the local upstream is not reachable, Claude Code is pointing at a local router such as CC Switch, but nothing is listening on that port.
@@ -478,6 +495,7 @@ agent-switch rm <session>
 | `deepseek-tui` | `agent-switch deepseek-tui` | Start the DeepSeek-TUI legacy runtime shim directly |
 | `kimi` | `agent-switch kimi` | Start Claude Code against Kimi / Moonshot |
 | `opencode` | `agent-switch opencode` | Start OpenCode with capture enabled |
+| `hermes` | `agent-switch hermes "hello"` | Chat with the local Docker-hosted Hermes API |
 | `run` | `agent-switch run --provider openai -- my-cli` | Wrap an arbitrary compatible CLI |
 | `dashboard` | `agent-switch dashboard` | Open the dashboard over saved logs |
 | `webui` | `agent-switch webui` | Alias for `dashboard` |
@@ -537,16 +555,58 @@ See [references/agent-switch-capabilities.md](./references/agent-switch-capabili
 
 ## Hermes Local API
 
-Hermes is treated as a local Docker-hosted API service, not as a spawned CLI. The default endpoint is:
+Hermes is treated as a local Docker-hosted API service, not as a spawned CLI. `agent-switch hermes` talks to the local API directly and records the exchange in the normal Agent Switch session store.
+
+The default endpoint is:
 
 ```text
 http://127.0.0.1:8642
 ```
 
-When Hermes returns `401` and no saved auth config exists, Agent Switch Skill asks the user for the required Authorization value and stores it locally in:
+Common commands:
+
+```bash
+# Check the local Hermes container/API
+agent-switch hermes --health
+
+# List available models from /v1/models
+agent-switch hermes --list-models
+
+# One-shot chat
+agent-switch hermes "hello"
+
+# Pick a model explicitly
+agent-switch hermes --model <model-id> "summarize this project"
+
+# Open a small terminal chat loop
+agent-switch hermes
+```
+
+Use `--upstream` or `--base-url` if Hermes is exposed on a different port:
+
+```bash
+agent-switch hermes --upstream http://127.0.0.1:8642 --health
+```
+
+When Hermes returns `401`, Agent Switch asks for the required Authorization value and stores it locally in:
 
 ```text
 ~/.agent-switch/hermes.json
+```
+
+If you enter only a raw token, Agent Switch saves it as `Bearer <token>`. If you enter a full value such as `Bearer abc...`, it saves that value unchanged. If a saved token later returns `401`, Agent Switch prompts you to replace it when running from an interactive terminal.
+
+You can also provide the auth value non-interactively:
+
+```bash
+AGENT_SWITCH_HERMES_AUTH="Bearer <token>" agent-switch hermes --list-models
+```
+
+Hermes requests are captured like other provider traffic, so you can inspect them afterward:
+
+```bash
+agent-switch dashboard
+agent-switch export <session>/<seq> --format md
 ```
 
 See [references/hermes-local-api.md](./references/hermes-local-api.md) for the saved config format and call flow.
@@ -659,6 +719,8 @@ You can also remove the local `~/.agent-switch` directory manually if you want t
 - Added CLI profile isolation for Codex, Claude Code, and OpenCode
 - Added modular dashboard segments (Sessions, Status, Profile, Compact, Tokens, Latency, Cost) with a settings modal and Grid/Bar layouts
 - Added `/api/stats` endpoint and a Tokens segment showing session-wide input/output/cache totals
+- Added local Hermes API support with health checks, model listing, one-shot chat, REPL mode, saved Authorization, and dashboard capture
+- Improved Windows Codex launch resolution by preferring the real desktop CLI executable over `WindowsApps` aliases
 
 ## Contributing
 
