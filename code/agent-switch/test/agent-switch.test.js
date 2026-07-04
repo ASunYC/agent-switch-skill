@@ -17,6 +17,7 @@ test("prints handoff for provider runs only", () => {
   assert.equal(internals.shouldPrintHandoff(["export", "session/0001"]), false);
   assert.equal(internals.shouldPrintHandoff(["profile", "list"]), false);
   assert.equal(internals.shouldPrintHandoff(["compact", "doctor"]), false);
+  assert.equal(internals.shouldPrintHandoff(["hermes", "--health"]), false);
 });
 
 test("renders an empty handoff without logs", () => {

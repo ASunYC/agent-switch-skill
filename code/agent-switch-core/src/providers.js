@@ -140,6 +140,14 @@ export const PROVIDERS = {
     mcp: true,
     note: "Vertex AI: set ANTHROPIC_BASE_URL to your Vertex endpoint before running (e.g. https://us-east5-aiplatform.googleapis.com). GCP credentials are forwarded as-is.",
   },
+  hermes: {
+    label: "Hermes (local)",
+    command: null,
+    format: "openai",
+    envVar: "HERMES_BASE_URL",
+    upstream: "http://127.0.0.1:8642",
+    note: "Hermes is a local Docker-hosted API service (not a CLI). Use `agent-switch hermes` to chat directly. Auth stored in ~/.agent-switch/hermes.json.",
+  },
 };
 
 export const PICKABLE = ["claude", "codex", "codewhale", "deepseek", "kimi", "opencode"]; // shown in the no-arg picker

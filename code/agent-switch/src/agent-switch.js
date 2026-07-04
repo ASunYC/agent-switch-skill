@@ -16,6 +16,7 @@ USAGE
   agent-switch codewhale [args...]    Start CodeWhale with conversation capture
   agent-switch deepseek [args...]     Start DeepSeek-TUI legacy shim with conversation capture
   agent-switch kimi [args...]         Start Claude Code against Kimi/Moonshot
+  agent-switch hermes [args...]       Chat with local Hermes API
   agent-switch run --provider P -- <cmd...>
   agent-switch profile new <tool>/<name> [--shared]
   agent-switch profile list [tool]
@@ -34,6 +35,12 @@ The dashboard is already running during captured CLI runs (e.g. \`agent-switch c
 The URL is printed on startup; open it in another browser tab, or use \`--open\` to auto-open.
 Use \`agent-switch dashboard\` (or \`webui\`) later to browse saved logs without starting capture.
 
+Hermes local API:
+
+  agent-switch hermes --health
+  agent-switch hermes --list-models
+  agent-switch hermes "hello"
+
 Compact mode is explicit and only supports Claude Code based providers in v1:
 
   agent-switch claude --compact
@@ -48,7 +55,7 @@ Profiles isolate local CLI accounts/config without changing the working dir:
   agent-switch claude --profile work
   agent-switch claude --resume            # show Claude Code's resume/session picker`;
 
-const PASS_THROUGH = new Set(["dashboard", "webui", "view", "migrate", "repack", "rm", "export", "proxy", "profile", "compact"]);
+const PASS_THROUGH = new Set(["dashboard", "webui", "view", "migrate", "repack", "rm", "export", "proxy", "profile", "compact", "hermes"]);
 
 export async function main(argv, io = process) {
   if (!argv.length || argv.includes("-h") || argv.includes("--help")) {
@@ -110,6 +117,12 @@ Headroom compact mode:
   agent-switch compact install
   agent-switch compact doctor
   agent-switch claude --compact
+
+Hermes local API:
+
+  agent-switch hermes --health
+  agent-switch hermes --list-models
+  agent-switch hermes "hello"
 
 Profiles:
 

@@ -220,6 +220,7 @@ test("codex --profile chooses saved auth and reads config.toml from CODEX_HOME p
     OPENAI_BASE_URL: "https://env.example/v1",
     PATH: "",
     Path: "",
+    LOCALAPPDATA: fs.mkdtempSync(path.join(os.tmpdir(), "agent-switch-no-codex-localappdata-")),
   });
 
   assert.equal(code, 1);
@@ -245,6 +246,7 @@ test("codex --profile defaults to resume --last when profile sessions exist and 
     OPENAI_BASE_URL: "https://api.openai.com",
     PATH: "",
     Path: "",
+    LOCALAPPDATA: fs.mkdtempSync(path.join(os.tmpdir(), "agent-switch-no-codex-localappdata-")),
   });
 
   assert.equal(code, 1);
@@ -266,6 +268,7 @@ test("codex --profile does not auto-resume when Codex args were supplied", async
     OPENAI_BASE_URL: "https://api.openai.com",
     PATH: "",
     Path: "",
+    LOCALAPPDATA: fs.mkdtempSync(path.join(os.tmpdir(), "agent-switch-no-codex-localappdata-")),
   });
 
   assert.equal(code, 1);
@@ -280,6 +283,7 @@ test("codex --profile requires an interactive auth choice when no scripted choic
     OPENAI_BASE_URL: "https://api.openai.com",
     PATH: "",
     Path: "",
+    LOCALAPPDATA: fs.mkdtempSync(path.join(os.tmpdir(), "agent-switch-no-codex-localappdata-")),
   });
 
   assert.equal(code, 1);
@@ -295,6 +299,7 @@ test("plain codex does not open the profile auth menu", async () => {
     OPENAI_BASE_URL: "https://api.openai.com",
     PATH: "",
     Path: "",
+    LOCALAPPDATA: fs.mkdtempSync(path.join(os.tmpdir(), "agent-switch-no-codex-localappdata-")),
   });
 
   assert.equal(code, 1);
@@ -317,6 +322,13 @@ test("compact install prints external Headroom instructions", async () => {
   assert.match(stdout, /pip install "headroom-ai\[proxy\]"/);
   assert.match(stdout, /headroom proxy/);
   assert.match(stdout, /RTK is intentionally not initialized/);
+});
+
+test("hermes health exits 1 when the local API is unreachable", async () => {
+  const { code, stderr } = await run(["hermes", "--health", "--upstream", "http://127.0.0.1:9"]);
+
+  assert.equal(code, 1);
+  assert.match(stderr, /Hermes is not running/);
 });
 
 test("--compact is limited to Claude Code based providers in v1", async () => {

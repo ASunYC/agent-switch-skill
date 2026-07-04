@@ -25,6 +25,31 @@ test("resolveWindowsCommand finds PATHEXT shims on PATH", () => {
   assert.equal(resolveWindowsCommand("codex", env, "win32"), file);
 });
 
+test("resolveWindowsCommand prefers real executables over WindowsApps aliases", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-switch-spawn-winapps-"));
+  const aliasDir = path.join(root, "AppData", "Local", "Microsoft", "WindowsApps");
+  const realDir = path.join(root, "AppData", "Local", "OpenAI", "Codex", "bin");
+  fs.mkdirSync(aliasDir, { recursive: true });
+  fs.mkdirSync(realDir, { recursive: true });
+  const alias = path.join(aliasDir, "codex.exe");
+  const real = path.join(realDir, "codex.exe");
+  fs.writeFileSync(alias, "");
+  fs.writeFileSync(real, "");
+  const env = { PATH: [aliasDir, realDir].join(path.delimiter), PATHEXT: ".EXE" };
+
+  assert.equal(resolveWindowsCommand("codex", env, "win32"), real);
+});
+
+test("resolveWindowsCommand finds the Codex desktop CLI outside PATH", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-switch-spawn-codex-"));
+  const codex = path.join(root, "OpenAI", "Codex", "bin", "codex.exe");
+  fs.mkdirSync(path.dirname(codex), { recursive: true });
+  fs.writeFileSync(codex, "");
+  const env = { PATH: "", PATHEXT: ".EXE", LOCALAPPDATA: root };
+
+  assert.equal(resolveWindowsCommand("codex", env, "win32"), codex);
+});
+
 test("prepareSpawn runs Windows cmd shims through cmd.exe", () => {
   const { dir, file } = tempCommand("codex.cmd");
   const env = { PATH: dir, PATHEXT: ".EXE;.CMD", ComSpec: "C:\\Windows\\System32\\cmd.exe" };

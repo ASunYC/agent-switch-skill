@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import crossSpawn from "cross-spawn";
 
 const WINDOWS_SCRIPT_EXTS = new Set([".cmd", ".bat", ".ps1"]);
 
@@ -35,9 +34,22 @@ function candidateFiles(command, env = process.env) {
   return bases.flatMap((base) => [base, ...pathextEntries(env).map((pathext) => base + pathext)]);
 }
 
+function knownWindowsCommandFiles(command, env = process.env) {
+  if (String(command).toLowerCase() !== "codex") return [];
+  const localAppData = env.LOCALAPPDATA || (env.USERPROFILE ? path.join(env.USERPROFILE, "AppData", "Local") : null);
+  return localAppData ? [path.join(localAppData, "OpenAI", "Codex", "bin", "codex.exe")] : [];
+}
+
+function isWindowsAppsPath(file) {
+  const normalized = path.resolve(file).toLowerCase();
+  return normalized.includes("appdata\\local\\microsoft\\windowsapps") ||
+    normalized.includes("program files\\windowsapps");
+}
+
 export function resolveWindowsCommand(command, env = process.env, platform = process.platform) {
   if (platform !== "win32") return null;
-  return candidateFiles(command, env).find(isFile) || null;
+  const candidates = [...knownWindowsCommandFiles(command, env), ...candidateFiles(command, env)].filter(isFile);
+  return candidates.find((file) => !isWindowsAppsPath(file)) || candidates[0] || null;
 }
 
 function quoteCmdArg(arg) {
@@ -66,10 +78,9 @@ export function prepareSpawn(command, args, env = process.env, platform = proces
 }
 
 export function spawnCommand(command, args, options) {
-  // cross-spawn handles Windows .cmd/.ps1 shim resolution more reliably than
-  // our manual PATH scan (covers edge cases like mixed-case PATH env keys).
   if (process.platform === "win32") {
-    return crossSpawn(command, args, options);
+    const prepared = prepareSpawn(command, args, options?.env || process.env);
+    return spawn(prepared.command, prepared.args, { ...options, windowsVerbatimArguments: prepared.windowsVerbatimArguments });
   }
   return spawn(command, args, options);
 }

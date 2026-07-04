@@ -24,6 +24,7 @@ import {
   removeCodexAuthAccount,
   saveCodexAuthAccountFromDir,
 } from "./codex-auth-store.js";
+import { hermesCmd } from "./hermes.js";
 import {
   createProfile,
   deleteProfile,
@@ -47,6 +48,7 @@ USAGE
   agent-switch deepseek [args...]    Inspect DeepSeek-TUI legacy shim
   agent-switch kimi   [args...]      Inspect Kimi (Moonshot, via Claude Code)
   agent-switch opencode [args...]    Inspect OpenCode
+  agent-switch hermes [args...]     Chat with local Hermes API (REPL or one-shot)
   agent-switch run [--provider P] -- <cmd...>   Inspect any client
   agent-switch dashboard             View saved logs (no capture, browse-only)
   agent-switch webui                 Alias for dashboard
@@ -89,6 +91,9 @@ OPTIONS
                       Headroom proxy URL (default: ${DEFAULT_COMPACT.baseUrl})
   --compact-fail <mode>
                       open|closed (default: open; open forwards original request on failure)
+  --model <name>      Hermes: model id (default: first from /v1/models)
+  --list-models       Hermes: print /v1/models and exit
+  --health            Hermes: GET /health and exit
   -h, --help          Show this help
   -v, --version       Show version
 
@@ -115,6 +120,10 @@ EXAMPLES
   agent-switch run --provider glm -- my-openai-cli     # set OPENAI_BASE_URL first
   agent-switch run --provider bedrock -- claude        # set ANTHROPIC_BEDROCK_BASE_URL first
   agent-switch run --upstream https://my.api/v1 --env-var MY_BASE_URL -- my-tool
+  agent-switch hermes                 # REPL chat with local Hermes API
+  agent-switch hermes "hello"         # one-shot prompt
+  agent-switch hermes --health        # check /health
+  agent-switch hermes --list-models   # list /v1/models
   agent-switch export <id> --format raw > request.http`;
 
 function parseArgs(argv) {
@@ -148,6 +157,9 @@ function parseArgs(argv) {
     else if (a === "--compact-base-url") opts.compact.baseUrl = argv[++i];
     else if (a === "--compact-fail") opts.compact.fail = argv[++i];
     else if (a === "--format") opts.format = argv[++i];
+    else if (a === "--model") opts.model = argv[++i];
+    else if (a === "--list-models") opts.listModels = true;
+    else if (a === "--health") opts.health = true;
     else rest.push(a);
   }
   return { opts, rest };
@@ -1046,6 +1058,7 @@ export async function main(argv) {
   if (cmd === "dashboard" || cmd === "webui" || cmd === "view") return view(opts);
   if (cmd === "compact") return compactCmd(rest.slice(1), opts);
   if (cmd === "profile") return profileCmd(rest.slice(1), opts);
+  if (cmd === "hermes") return hermesCmd(rest.slice(1), opts);
   if (cmd === "migrate") return migrate(opts);
   if (cmd === "repack") { opts.session = rest[1]; return repack(opts); }
   if (cmd === "rm") return rmCmd(rest[1], opts);
