@@ -62,11 +62,21 @@ agent-switch claude --resume
 agent-switch codex
 agent-switch codewhale
 agent-switch deepseek
+# Set MOONSHOT_API_KEY before using the Kimi provider.
 agent-switch kimi
 agent-switch run --provider openai -- my-openai-compatible-cli
 ```
 
-Use `agent-switch codewhale` for CodeWhale, formerly DeepSeek-TUI. Keep supporting `agent-switch deepseek` and `agent-switch deepseek-tui` as legacy compatibility aliases while upstream still ships those shims.
+If a target CLI option conflicts with an Agent Switch option, insert `--` before the target option. Agent Switch removes this separator before launching the target:
+
+```bash
+agent-switch claude -- --profile target-profile
+agent-switch run --provider openai -- my-cli --model model-name
+```
+
+Target `--help`, `--version`, `--model`, `--format`, and `--health` options must reach the target CLI. Agent Switch must stop parsing its own options at `--`.
+
+Use `agent-switch codewhale` for CodeWhale, formerly DeepSeek-TUI. `agent-switch deepseek` and `agent-switch deepseek-tui` remain compatibility aliases and launch the current `codewhale` / `codewhale-tui` binaries even though upstream no longer installs the old shims.
 
 Captured CLI runs do not open the dashboard automatically. Do not open a web page just because the user asked to use this skill, run `agent-switch claude`, or run another captured CLI. Only open the web UI when the user explicitly asks for the dashboard/webui, or when they run one of these commands:
 
@@ -142,7 +152,7 @@ agent-switch profile delete codex/work --yes
 
 If no `--profile` flag is present, preserve the current default behavior and let the CLI use its normal global account/config.
 
-Treat `~/.agent-switch/profiles/codex/.accounts` as sensitive local data because it stores Codex auth snapshots for injection.
+Treat `~/.agent-switch/profiles/codex/.accounts` as sensitive local data because it stores Codex auth snapshots for injection. Keep account files and injected `auth.json` private (`0600` files and `0700` directories on POSIX; the current user's profile ACL on Windows).
 
 ## Headroom Compact Mode
 
@@ -162,6 +172,8 @@ Compact mode uses the bundled `headroom-ai` JavaScript SDK against an external H
 ```bash
 agent-switch compact doctor
 ```
+
+Treat a non-zero doctor exit code as a failed dependency check. The command must exit non-zero whenever the Headroom CLI, SDK, or proxy is unavailable.
 
 If Headroom is missing, print install guidance rather than installing external Python/Rust tooling automatically:
 
@@ -202,6 +214,13 @@ For CodeWhale, the renamed DeepSeek-TUI package, guide users to install and veri
 npm install -g codewhale
 codewhale doctor
 agent-switch codewhale
+```
+
+For OpenCode, install `opencode-ai`. Because OpenCode may contain several providers, choose the single OpenAI-compatible upstream captured by this run:
+
+```bash
+npm install -g opencode-ai
+agent-switch opencode --upstream <url>
 ```
 
 ## Local Upstream Troubleshooting
@@ -276,4 +295,4 @@ Load `references/hermes-local-api.md` when the user asks for Hermes setup, auth 
 - `cli/agent-switch-skill-<version>.tgz`: bundled cross-platform npm CLI package with runtime dependencies.
 - `scripts/install-agent-switch.js`: deterministic local installer for the skill command.
 
-Treat captured logs as sensitive. agent-switch masks auth headers by default, but prompts, tool outputs, file paths, and source snippets may still be stored.
+Treat captured logs as sensitive. agent-switch fully masks common authorization, API key, and cookie headers by default, but prompts, tool outputs, request bodies, file paths, and source snippets may still be stored.

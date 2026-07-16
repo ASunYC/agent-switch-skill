@@ -124,7 +124,7 @@ test("rmSession deletes the session and GCs only orphaned blobs", () => {
   ).request.messages[0];
 
   const b = new Store({ root });
-  b.sessionId = a.sessionId + "-B";
+  b.sessionId = "2099-01-01T00-00-00-000Z";
   b.sessionDir = path.join(root, b.sessionId);
   fs.mkdirSync(b.sessionDir, { recursive: true });
   const rb = b.add(mk("only-B")); rb.response = { status: 200 }; b.update(rb);

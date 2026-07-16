@@ -79,12 +79,18 @@ export function createProxy({ upstream, store, compact }) {
         headers["content-length"] = String(outboundBuf.length);
       }
 
+      let responseFinished = false;
+      const markInterrupted = (error) => {
+        if (rec.response) return;
+        rec.response = { error, finishedAt: Date.now() };
+        store.update(rec);
+      };
       const proxyReq = client.request(
         {
           protocol: up.protocol,
           hostname: up.hostname,
           port: up.port || (up.protocol === "http:" ? 80 : 443),
-          path: (up.pathname === "/" ? "" : up.pathname) + req.url,
+          path: upstreamRequestPath(up, req.url),
           method: req.method,
           headers,
         },
@@ -96,6 +102,7 @@ export function createProxy({ upstream, store, compact }) {
             res.write(c);
           });
           proxyRes.on("end", () => {
+            responseFinished = true;
             res.end();
             rec.response = {
               status: proxyRes.statusCode,
@@ -105,17 +112,54 @@ export function createProxy({ upstream, store, compact }) {
             };
             store.update(rec);
           });
+          proxyRes.on("aborted", () => markInterrupted("upstream response was aborted"));
+          proxyRes.on("error", (e) => markInterrupted(`upstream response error: ${e.message}`));
+          proxyRes.on("close", () => {
+            if (!responseFinished) markInterrupted("upstream response closed before completion");
+          });
         }
       );
 
+      res.on("close", () => {
+        if (responseFinished || rec.response) return;
+        markInterrupted("client disconnected before the upstream response completed");
+        proxyReq.destroy();
+      });
+
       proxyReq.on("error", (e) => {
-        if (!res.headersSent) res.writeHead(502, { "content-type": "text/plain" });
-        res.end(`agent-switch: upstream error: ${e.message}`);
-        rec.response = { error: e.message, finishedAt: Date.now() };
-        store.update(rec);
+        if (!res.destroyed) {
+          if (!res.headersSent) res.writeHead(502, { "content-type": "text/plain" });
+          res.end(`agent-switch: upstream error: ${e.message}`);
+        }
+        if (!rec.response) {
+          rec.response = { error: e.message, finishedAt: Date.now() };
+          store.update(rec);
+        }
       });
 
       proxyReq.end(outboundBuf);
     });
   });
+}
+
+export function upstreamRequestPath(upstream, requestUrl) {
+  const up = upstream instanceof URL ? upstream : new URL(upstream);
+  const incoming = new URL(requestUrl, "http://agent-switch.local");
+  const basePath = up.pathname === "/" ? "" : up.pathname.replace(/\/+$/, "");
+  const requestPath = incoming.pathname || "/";
+  let pathname;
+  if (!basePath) {
+    pathname = requestPath;
+  } else if (requestPath === basePath || requestPath.startsWith(`${basePath}/`)) {
+    pathname = requestPath;
+  } else if (basePath.endsWith(requestPath)) {
+    pathname = basePath;
+  } else {
+    pathname = `${basePath}/${requestPath.replace(/^\/+/, "")}`;
+  }
+
+  const query = new URLSearchParams(up.search);
+  for (const [key, value] of incoming.searchParams) query.set(key, value);
+  const search = query.toString();
+  return `${pathname}${search ? `?${search}` : ""}`;
 }

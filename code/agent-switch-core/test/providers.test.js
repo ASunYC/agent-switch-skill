@@ -21,21 +21,21 @@ test("codewhale-tui provider wraps the CodeWhale TUI binary directly", () => {
   assert.equal(provider.envVar, "DEEPSEEK_BASE_URL");
 });
 
-test("deepseek provider keeps the legacy DeepSeek-TUI shim", () => {
+test("deepseek provider keeps the legacy alias by launching CodeWhale", () => {
   const provider = resolveProvider("deepseek");
 
   assert.equal(provider.label, "CodeWhale (legacy deepseek)");
-  assert.equal(provider.command, "deepseek");
+  assert.equal(provider.command, "codewhale");
   assert.equal(provider.format, "openai");
   assert.equal(provider.envVar, "DEEPSEEK_BASE_URL");
   assert.equal(provider.upstream, "https://api.deepseek.com");
 });
 
-test("deepseek-tui alias wraps the runtime binary directly", () => {
+test("deepseek-tui alias launches the CodeWhale TUI binary", () => {
   const provider = resolveProvider("deepseek-tui");
 
   assert.equal(provider.label, "CodeWhale TUI (legacy deepseek-tui)");
-  assert.equal(provider.command, "deepseek-tui");
+  assert.equal(provider.command, "codewhale-tui");
   assert.equal(provider.format, "openai");
   assert.equal(provider.envVar, "DEEPSEEK_BASE_URL");
 });
@@ -61,13 +61,20 @@ test("deepseek is available in the interactive picker", () => {
   assert.ok(PICKABLE.includes("deepseek"));
 });
 
+test("generic OpenAI preset includes the v1 API prefix", () => {
+  const provider = resolveProvider("openai");
+
+  assert.equal(provider.envVar, "OPENAI_BASE_URL");
+  assert.equal(provider.upstream, "https://api.openai.com/v1");
+});
+
 test("ollama preset uses OPENAI_BASE_URL and a fixed local upstream", () => {
   const provider = resolveProvider("ollama");
 
   assert.equal(provider.label, "Ollama (local)");
   assert.equal(provider.format, "openai");
   assert.equal(provider.envVar, "OPENAI_BASE_URL");
-  assert.equal(provider.upstream, "http://127.0.0.1:11434");
+  assert.equal(provider.upstream, "http://127.0.0.1:11434/v1");
 });
 
 test("lmstudio preset uses OPENAI_BASE_URL and a fixed local upstream", () => {
@@ -76,7 +83,7 @@ test("lmstudio preset uses OPENAI_BASE_URL and a fixed local upstream", () => {
   assert.equal(provider.label, "LM Studio (local)");
   assert.equal(provider.format, "openai");
   assert.equal(provider.envVar, "OPENAI_BASE_URL");
-  assert.equal(provider.upstream, "http://127.0.0.1:1234");
+  assert.equal(provider.upstream, "http://127.0.0.1:1234/v1");
 });
 
 test("openrouter preset uses OPENAI_BASE_URL and the OpenRouter base upstream", () => {
@@ -85,7 +92,7 @@ test("openrouter preset uses OPENAI_BASE_URL and the OpenRouter base upstream", 
   assert.equal(provider.label, "OpenRouter");
   assert.equal(provider.format, "openai");
   assert.equal(provider.envVar, "OPENAI_BASE_URL");
-  assert.equal(provider.upstream, "https://openrouter.ai/api");
+  assert.equal(provider.upstream, "https://openrouter.ai/api/v1");
 });
 
 test("glm preset uses OPENAI_BASE_URL with autoUpstream", () => {
@@ -108,16 +115,18 @@ test("bedrock preset uses ANTHROPIC_BEDROCK_BASE_URL with autoUpstream", () => {
   assert.equal(provider.envVar, "ANTHROPIC_BEDROCK_BASE_URL");
   assert.equal(provider.command, "claude");
   assert.equal(provider.autoUpstream, true);
+  assert.equal(provider.runtimeEnv.CLAUDE_CODE_USE_BEDROCK, "1");
 });
 
-test("vertex preset uses ANTHROPIC_BASE_URL with autoUpstream", () => {
+test("vertex preset uses ANTHROPIC_VERTEX_BASE_URL with Vertex mode enabled", () => {
   const provider = resolveProvider("vertex");
 
   assert.equal(provider.label, "Google Vertex AI (via Claude Code)");
   assert.equal(provider.format, "anthropic");
-  assert.equal(provider.envVar, "ANTHROPIC_BASE_URL");
+  assert.equal(provider.envVar, "ANTHROPIC_VERTEX_BASE_URL");
   assert.equal(provider.command, "claude");
   assert.equal(provider.autoUpstream, true);
+  assert.equal(provider.runtimeEnv.CLAUDE_CODE_USE_VERTEX, "1");
 });
 
 test("ollama can be used as a run provider override", () => {
@@ -126,7 +135,7 @@ test("ollama can be used as a run provider override", () => {
   assert.equal(provider.command, "custom-agent");
   assert.equal(provider.format, "openai");
   assert.equal(provider.envVar, "OPENAI_BASE_URL");
-  assert.equal(provider.upstream, "http://127.0.0.1:11434");
+  assert.equal(provider.upstream, "http://127.0.0.1:11434/v1");
 });
 
 test("openrouter can be used as a run provider override", () => {
@@ -135,7 +144,7 @@ test("openrouter can be used as a run provider override", () => {
   assert.equal(provider.command, "my-tool");
   assert.equal(provider.format, "openai");
   assert.equal(provider.envVar, "OPENAI_BASE_URL");
-  assert.equal(provider.upstream, "https://openrouter.ai/api");
+  assert.equal(provider.upstream, "https://openrouter.ai/api/v1");
 });
 
 test("opencode provider uses OPENAI_BASE_URL with autoUpstream", () => {
@@ -153,6 +162,14 @@ test("opencode is available in the interactive picker", () => {
   assert.ok(PICKABLE.includes("opencode"));
 });
 
+test("kimi provider enables isolated Moonshot runtime configuration", () => {
+  const provider = resolveProvider("kimi");
+
+  assert.equal(provider.command, "claude");
+  assert.equal(provider.upstream, "https://api.moonshot.ai/anthropic");
+  assert.equal(provider.kimi, true);
+});
+
 test("codex-azure provider uses AZURE_OPENAI_ENDPOINT with autoUpstream", () => {
   const provider = resolveProvider("codex-azure");
 
@@ -161,6 +178,7 @@ test("codex-azure provider uses AZURE_OPENAI_ENDPOINT with autoUpstream", () => 
   assert.equal(provider.format, "openai");
   assert.equal(provider.envVar, "AZURE_OPENAI_ENDPOINT");
   assert.equal(provider.autoUpstream, true);
+  assert.equal(provider.codexAzure, true);
 });
 
 test("codex-azure can be used as a run provider override", () => {

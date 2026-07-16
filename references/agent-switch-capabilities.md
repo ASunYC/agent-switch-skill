@@ -5,12 +5,15 @@ The bundled code in `code/agent-switch-core` is the internal capture engine for 
 ## Captured Clients
 
 - `claude`: Claude Code through `ANTHROPIC_BASE_URL`, Anthropic Messages format, optional agent-switch MCP self-inspection.
-- `codex`: Codex through `OPENAI_BASE_URL`, OpenAI Responses / Chat format. API-key mode is required; ChatGPT-login WebSocket mode bypasses base URL capture.
+- `codex`: Codex in ChatGPT-login or API-key mode through a temporary HTTP-only model provider, OpenAI Responses format. The user's Codex config is not modified.
 - `codewhale` and `codewhale-tui`: CodeWhale through `DEEPSEEK_BASE_URL`, OpenAI-compatible Chat format.
-- `deepseek` and `deepseek-tui`: legacy DeepSeek-TUI compatibility shims retained while CodeWhale upstream still ships them.
-- `kimi`: Claude Code pointed at Moonshot's Anthropic-compatible endpoint.
-- `opencode`: OpenCode through `OPENAI_BASE_URL`, upstream auto-detected from the current environment.
+- `deepseek` and `deepseek-tui`: legacy Agent Switch aliases mapped to the current `codewhale` and `codewhale-tui` binaries.
+- `kimi`: Claude Code pointed at Moonshot's Anthropic-compatible endpoint. Agent Switch prefers `MOONSHOT_API_KEY` and injects the current `kimi-k2.7-code` model settings so an unrelated Claude/cc-switch provider cannot leak into the run.
+- `opencode`: OpenCode through one OpenAI-compatible upstream selected by `OPENAI_BASE_URL` or `--upstream` for each run.
 - `ollama`, `lmstudio`, `openrouter`, `glm`, `bedrock`, `vertex`: built-in provider recipes.
+- `vertex` injects `CLAUDE_CODE_USE_VERTEX=1` and uses `ANTHROPIC_VERTEX_BASE_URL`; project, region, and Google credentials remain user-managed.
+- `bedrock` injects `CLAUDE_CODE_USE_BEDROCK=1` and supports Bedrock-compatible gateways. Direct AWS SigV4 endpoints are rejected because a Host-rewriting proxy invalidates the signature.
+- `codex-azure`: Codex through a temporary Azure provider. `AZURE_OPENAI_ENDPOINT` must be the full deployment Responses URL (including `api-version`), `AZURE_OPENAI_API_KEY` is forwarded as the `api-key` header, and Codex's local model cache suppresses unsupported Azure `/models` probes.
 - `run --provider <provider> -- <cmd...>`: wrap any CLI that respects a base URL env var.
 
 ## CLI Account Profiles
@@ -43,6 +46,7 @@ Useful profile commands:
 
 - `agent-switch <provider> [args...]`: run a coding CLI through agent-switch and print a Codex handoff summary when it exits.
 - `agent-switch run --provider openai -- <cmd...>`: wrap an arbitrary OpenAI-compatible CLI.
+- `agent-switch <provider> -- <target-options...>`: stop Agent Switch option parsing and pass reserved option names to the target CLI.
 - `agent-switch dashboard`: open the saved-log dashboard.
 - `agent-switch webui`: alias for `dashboard`.
 - `agent-switch view`: backward-compatible alias for `dashboard`.
@@ -56,4 +60,4 @@ Useful profile commands:
 
 New captures are saved under `~/.agent-switch/sessions/<encoded-project-path>-<hash>/<session>/NNNN.json`. The dashboard reads both the global store and legacy `./.agent-switch` in the current project.
 
-Auth headers are redacted by default. Tell the user that logs still contain sensitive prompts, tool outputs, file paths, and possibly source snippets.
+Authorization, API key, and cookie headers are fully redacted by default. Tell the user that logs still contain sensitive prompts, request bodies, tool outputs, file paths, and possibly source snippets.

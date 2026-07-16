@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnPortable } from "./spawn-portable.js";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const skillRoot = path.resolve(scriptDir, "..");
@@ -12,10 +12,9 @@ const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
 
 function run(args, options = {}) {
   process.stderr.write(`agent-switch package: ${npmCmd} ${args.join(" ")}\n`);
-  const result = spawnSync(npmCmd, args, {
+  const result = spawnPortable(npmCmd, args, {
     cwd: skillRoot,
     stdio: "inherit",
-    shell: process.platform === "win32",
     ...options,
   });
   if (result.error) {
@@ -32,7 +31,7 @@ for (const name of fs.readdirSync(cliDir)) {
   }
 }
 
-let status = run(["install", "--omit=dev"]);
+let status = run(["ci", "--omit=dev"]);
 if (status !== 0) process.exit(status);
 
 status = run(["pack", "--pack-destination", cliDir]);

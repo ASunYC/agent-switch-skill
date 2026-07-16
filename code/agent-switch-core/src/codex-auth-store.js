@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { profileBase } from "./profiles.js";
+import { ensurePrivateDir, writePrivateJson } from "./secure-files.js";
 
 const STORE_VERSION = 1;
 
@@ -33,7 +34,7 @@ export function loadCodexAuthIndex(env = process.env) {
 
 export function saveCodexAuthIndex(index, env = process.env) {
   const root = codexAuthStoreRoot(env);
-  fs.mkdirSync(root, { recursive: true });
+  ensurePrivateDir(root);
   const normalized = {
     version: STORE_VERSION,
     currentAccountId: index.currentAccountId || null,
@@ -41,7 +42,7 @@ export function saveCodexAuthIndex(index, env = process.env) {
       String(b.lastUsedAt || b.updatedAt || "").localeCompare(String(a.lastUsedAt || a.updatedAt || ""))
     ),
   };
-  fs.writeFileSync(indexPath(env), JSON.stringify(normalized, null, 2) + "\n");
+  writePrivateJson(indexPath(env), normalized);
   return normalized;
 }
 
@@ -87,11 +88,8 @@ export function saveCodexAuthAccount(authJson, opts = {}) {
     lastUsedAt: existing?.lastUsedAt || null,
     authJson,
   };
-  fs.mkdirSync(codexAuthAccountsDir(env), { recursive: true });
-  fs.writeFileSync(
-    path.join(codexAuthAccountsDir(env), `${id}.json`),
-    JSON.stringify(record, null, 2) + "\n"
-  );
+  ensurePrivateDir(codexAuthAccountsDir(env));
+  writePrivateJson(path.join(codexAuthAccountsDir(env), `${id}.json`), record);
   const index = loadCodexAuthIndex(env);
   const summary = accountSummary(record);
   index.accounts = index.accounts.filter((a) => a.id !== id);
@@ -102,28 +100,22 @@ export function saveCodexAuthAccount(authJson, opts = {}) {
 export function injectCodexAuthAccount(profileDir, accountId, env = process.env) {
   const account = loadCodexAuthAccount(accountId, env);
   if (!account) throw new Error(`Codex auth account not found: ${accountId}`);
-  fs.mkdirSync(profileDir, { recursive: true });
-  fs.writeFileSync(path.join(profileDir, "auth.json"), JSON.stringify(account.authJson, null, 2) + "\n");
+  ensurePrivateDir(profileDir);
+  writePrivateJson(path.join(profileDir, "auth.json"), account.authJson);
   const now = new Date().toISOString();
   account.lastUsedAt = now;
-  fs.writeFileSync(
-    path.join(codexAuthAccountsDir(env), `${account.id}.json`),
-    JSON.stringify(account, null, 2) + "\n"
-  );
+  writePrivateJson(path.join(codexAuthAccountsDir(env), `${account.id}.json`), account);
   const index = loadCodexAuthIndex(env);
   index.currentAccountId = account.id;
   index.accounts = index.accounts.filter((a) => a.id !== account.id);
   index.accounts.push(accountSummary(account));
   saveCodexAuthIndex(index, env);
-  fs.writeFileSync(
-    path.join(profileDir, ".agent-switch-codex-auth.json"),
-    JSON.stringify({
-      accountId: account.id,
-      label: account.label,
-      email: account.email,
-      injectedAt: now,
-    }, null, 2) + "\n"
-  );
+  writePrivateJson(path.join(profileDir, ".agent-switch-codex-auth.json"), {
+    accountId: account.id,
+    label: account.label,
+    email: account.email,
+    injectedAt: now,
+  });
   return account;
 }
 

@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   Store,
+  createSessionDir,
   listSessions,
   loadSession,
   listSessionsMulti,
@@ -39,6 +40,54 @@ test("Store masks auth, persists, and reloads from disk", () => {
   assert.equal(loaded.length, 1);
   assert.match(loaded[0].request.headers.authorization, /REDACTED/);
   assert.equal(loaded[0].response.status, 200);
+
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("Store finalizes pending requests when a captured CLI exits", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-switch-finalize-"));
+  try {
+    const store = new Store({ root, format: "openai" });
+    const rec = store.add({ request: { method: "POST", url: "/responses", headers: {}, body: {} } });
+    store.finalizePending();
+    assert.match(rec.response.error, /client exited/);
+    assert.match(loadSession(root, store.sessionId)[0].response.error, /client exited/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("concurrent stores reserve distinct timestamp session directories", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-switch-session-reserve-"));
+  try {
+    const first = createSessionDir(root, 0);
+    const second = createSessionDir(root, 0);
+    assert.notEqual(first.id, second.id);
+    assert.ok(fs.existsSync(first.dir));
+    assert.ok(fs.existsSync(second.dir));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Store fully redacts common credential and cookie headers", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-switch-redaction-"));
+  const store = new Store({ root });
+  const secretHeaders = {
+    authorization: "Basic dXNlcjpwYXNz",
+    "proxy-authorization": "Bearer proxy-secret",
+    "x-api-key": "generic-secret",
+    "api-key": "azure-secret",
+    "x-goog-api-key": "google-secret",
+    cookie: "session=secret",
+  };
+
+  const rec = store.add({ request: { method: "POST", url: "/", headers: secretHeaders, body: {} } });
+  rec.response = { status: 200, headers: { "set-cookie": "session=response-secret" } };
+  store.update(rec);
+
+  for (const value of Object.values(rec.request.headers)) assert.equal(value, "[REDACTED]");
+  assert.equal(rec.response.headers["set-cookie"], "[REDACTED]");
 
   fs.rmSync(root, { recursive: true, force: true });
 });
@@ -368,14 +417,18 @@ test("v2 manifests are reconstructed transparently by loadSession/readEntryById"
   assert.deepEqual(one.request.body.messages, [{ role: "user", content: "hi" }]);
 });
 
-test("listSessions ignores the blobs directory", () => {
+test("listSessions ignores non-session infrastructure directories", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-switch-ls-"));
   const store = new Store({ root });
   const rec = store.add({ request: { method: "POST", url: "/x", headers: {},
     body: { model: "m", messages: [{ role: "user", content: "hi" }], tools: [] } } });
   rec.response = { status: 200 }; store.update(rec);
-  const sessions = listSessions(root); // listSessions must already be imported at top of file
-  assert.deepEqual(sessions, [store.sessionId]); // NOT ["blobs", ...]
+  fs.mkdirSync(path.join(root, "profiles"));
+  fs.mkdirSync(path.join(root, "sessions"));
+  fs.mkdirSync(path.join(root, ".accounts"));
+
+  const sessions = listSessions(root);
+  assert.deepEqual(sessions, [store.sessionId]);
 });
 
 test("legacy NNNN.json is repacked to v2 in place on read, idempotently", () => {

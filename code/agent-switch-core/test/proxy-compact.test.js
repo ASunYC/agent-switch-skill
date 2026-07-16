@@ -127,3 +127,35 @@ test("proxy fails closed before contacting upstream when requested", async () =>
     assert.match(store.entries[0].compression.error, /headroom offline/);
   });
 });
+
+test("proxy records a client disconnect instead of leaving a pending request", async () => {
+  const upstream = http.createServer((_req, _res) => {});
+  const upstreamPort = await listen(upstream);
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-switch-proxy-abort-"));
+  const store = new Store({ root, format: "anthropic" });
+  const proxy = createProxy({ upstream: `http://127.0.0.1:${upstreamPort}`, store });
+  const proxyPort = await listen(proxy);
+  try {
+    await new Promise((resolve) => {
+      const req = http.request({
+        host: "127.0.0.1",
+        port: proxyPort,
+        path: "/v1/messages",
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      });
+      req.on("error", () => resolve());
+      req.end(JSON.stringify({ model: "claude-test", messages: [] }));
+      setTimeout(() => req.destroy(), 25);
+      setTimeout(resolve, 100);
+    });
+    assert.equal(store.entries.length, 1);
+    assert.match(store.entries[0].response?.error || "", /disconnected|closed|aborted/);
+  } finally {
+    proxy.closeAllConnections?.();
+    proxy.close();
+    upstream.closeAllConnections?.();
+    upstream.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

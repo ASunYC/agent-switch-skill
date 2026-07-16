@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { ensurePrivateDir, writePrivateJson } from "./secure-files.js";
 
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
@@ -116,15 +117,15 @@ export function createProfile(spec, opts = {}) {
   const parsed = parseProfileSpec(spec);
   const env = opts.env || process.env;
   const dir = profileDir(parsed.tool, parsed.name, env);
-  fs.mkdirSync(dir, { recursive: true });
+  ensurePrivateDir(dir);
   const metaPath = path.join(dir, ".agent-switch-profile.json");
   if (!fs.existsSync(metaPath)) {
-    fs.writeFileSync(metaPath, JSON.stringify({
+    writePrivateJson(metaPath, {
       tool: parsed.tool,
       name: parsed.name,
       createdAt: new Date().toISOString(),
       shared: Boolean(opts.shared),
-    }, null, 2) + "\n");
+    });
   }
   const linked = opts.shared ? shareDefaults(parsed.tool, dir, env) : [];
   return { ...parsed, dir, env: profileEnv(parsed.tool, dir), linked };

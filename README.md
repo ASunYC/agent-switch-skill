@@ -150,6 +150,12 @@ Build the npm tarball that ships with the skill and includes runtime dependencie
 npm run build:package
 ```
 
+Release and CI builds use `npm ci` so the bundled dependency tree comes from `package-lock.json`. To rebuild the package and fail if the checked-in tarball was stale, run:
+
+```bash
+npm run check:package
+```
+
 The package is written to `cli/` and can be installed on any machine with Node.js 18 or newer:
 
 ```bash
@@ -185,7 +191,7 @@ agent-switch hermes "hello"
 # Start DeepSeek-TUI legacy shim through agent-switch
 agent-switch deepseek
 
-# Start Claude Code against Kimi / Moonshot
+# Start Claude Code against Kimi / Moonshot (set MOONSHOT_API_KEY first)
 agent-switch kimi
 
 # Browse saved logs after a capture run (no capture, no CLI launched)
@@ -216,6 +222,15 @@ agent-switch codex --model gpt-5
 agent-switch codewhale
 agent-switch opencode
 ```
+
+Agent Switch options can appear before the target arguments. If the target CLI uses an option reserved by Agent Switch, place `--` before that target option. The separator is removed before the target starts:
+
+```bash
+agent-switch claude -- --profile target-profile
+agent-switch run --provider openai -- my-cli --model model-name
+```
+
+Target-only options such as `--model`, `--format`, `--health`, `--help`, and `--version` are forwarded normally. `--profile`, `--open`, `--port`, `--upstream`, and compact options belong to Agent Switch unless they appear after `--`.
 
 Wrap a custom command:
 
@@ -302,7 +317,7 @@ Profile directories are stored under:
 
 Shared profiles may link or copy safe files such as `config.toml`, `settings.json`, skills, commands, and plugins. Agent Switch never shares known auth/session files such as Codex `auth.json`, Claude `.credentials.json`, session folders, or history files unless a Codex auth is explicitly selected from the local auth menu.
 
-Treat `~/.agent-switch/profiles/codex/.accounts` as sensitive local data because it stores saved Codex auth snapshots for injection.
+Treat `~/.agent-switch/profiles/codex/.accounts` as sensitive local data because it stores saved Codex auth snapshots for injection. Agent Switch writes account and injected auth files with private file permissions (`0600`) and profile/account directories with `0700` on POSIX systems; Windows continues to rely on the current user's profile ACL.
 
 ### Headroom Compact
 
@@ -324,6 +339,8 @@ pip install "headroom-ai[proxy]"
 headroom proxy
 agent-switch compact doctor
 ```
+
+`agent-switch compact doctor` returns exit code `1` when the Headroom CLI, JavaScript SDK, or proxy check fails, so scripts and agents can reliably detect an incomplete setup.
 
 By default, compact mode is fail-open. If Headroom is unavailable, Agent Switch records the failure and forwards the original Claude request:
 
@@ -382,6 +399,18 @@ Then verify:
 ```bash
 codewhale doctor
 agent-switch codewhale
+```
+
+For OpenCode, install the package that provides the `opencode` command:
+
+```bash
+npm install -g opencode-ai
+```
+
+OpenCode can configure several providers at once, while one Agent Switch capture run forwards to one upstream. Select it explicitly with `OPENAI_BASE_URL` or `--upstream`:
+
+```bash
+agent-switch opencode --upstream https://api.openai.com
 ```
 
 For Codex on Windows, Agent Switch first tries the real `codex` executable on `PATH`, then checks the desktop install path:
@@ -491,9 +520,9 @@ agent-switch rm <session>
 | `codex` | `agent-switch codex` | Start Codex with capture enabled |
 | `codewhale` | `agent-switch codewhale` | Start CodeWhale with capture enabled |
 | `codewhale-tui` | `agent-switch codewhale-tui` | Start the CodeWhale TUI binary directly |
-| `deepseek` | `agent-switch deepseek` | Start the DeepSeek-TUI legacy shim with capture enabled |
-| `deepseek-tui` | `agent-switch deepseek-tui` | Start the DeepSeek-TUI legacy runtime shim directly |
-| `kimi` | `agent-switch kimi` | Start Claude Code against Kimi / Moonshot |
+| `deepseek` | `agent-switch deepseek` | Legacy alias that launches CodeWhale with capture enabled |
+| `deepseek-tui` | `agent-switch deepseek-tui` | Legacy alias that launches the current CodeWhale TUI |
+| `kimi` | `agent-switch kimi` | Start Claude Code against Kimi / Moonshot using an isolated `MOONSHOT_API_KEY` |
 | `opencode` | `agent-switch opencode` | Start OpenCode with capture enabled |
 | `hermes` | `agent-switch hermes "hello"` | Chat with the local Docker-hosted Hermes API |
 | `run` | `agent-switch run --provider openai -- my-cli` | Wrap an arbitrary compatible CLI |
@@ -550,6 +579,10 @@ Built-in provider recipes include:
 - `glm`
 - `bedrock`
 - `vertex`
+
+For `codex-azure`, set `AZURE_OPENAI_ENDPOINT` to the full deployment Responses URL, including `api-version`, and set `AZURE_OPENAI_API_KEY`. Agent Switch injects an HTTP-only Codex provider for the captured run, forwards the key as Azure's `api-key` header, and reuses Codex's local model cache to avoid unsupported Azure `/models` probes.
+
+For `vertex`, set `ANTHROPIC_VERTEX_BASE_URL`, `ANTHROPIC_VERTEX_PROJECT_ID`, and `CLOUD_ML_REGION`; Agent Switch enables `CLAUDE_CODE_USE_VERTEX` for the child process. For `bedrock`, use a Bedrock-compatible gateway in `ANTHROPIC_BEDROCK_BASE_URL`; direct `amazonaws.com` SigV4 traffic cannot pass through the local capture proxy because the signed Host changes.
 
 See [references/agent-switch-capabilities.md](./references/agent-switch-capabilities.md) for provider details, storage behavior, export formats, and proxy-only usage.
 
@@ -665,7 +698,7 @@ Agent Switch forwards requests to the upstream provider already configured for t
 
 ### Capture Privacy
 
-Agent Switch masks auth headers by default. Captured logs may still include prompts, tool outputs, file paths, source snippets, and other sensitive content. Treat `~/.agent-switch` as private local data.
+Agent Switch fully masks common credential and cookie headers by default, including `Authorization`, `Proxy-Authorization`, `x-api-key`, `api-key`, `x-goog-api-key`, `Cookie`, and `Set-Cookie`. Captured logs may still include prompts, tool outputs, file paths, source snippets, request bodies, and other sensitive content. Treat `~/.agent-switch` as private local data.
 
 ## FAQ
 
@@ -689,7 +722,7 @@ You can run temporary commands with package tooling during development, but the 
 
 ### Why is the Codex dashboard empty?
 
-Codex must send model traffic through an OpenAI-compatible base URL for capture. ChatGPT-login WebSocket mode bypasses `OPENAI_BASE_URL`, so Agent Switch will warn when it detects that mode.
+Current Agent Switch releases route both ChatGPT-login and API-key Codex sessions through a temporary HTTP-only provider, without changing `~/.codex/config.toml`. If a new run is still empty, verify that the bundled CLI is current with `node scripts/install-agent-switch.js`, then inspect the startup output for the selected upstream and capture directory.
 
 ### Where do captured conversations go?
 
@@ -721,6 +754,12 @@ You can also remove the local `~/.agent-switch` directory manually if you want t
 - Added `/api/stats` endpoint and a Tokens segment showing session-wide input/output/cache totals
 - Added local Hermes API support with health checks, model listing, one-shot chat, REPL mode, saved Authorization, and dashboard capture
 - Improved Windows Codex launch resolution by preferring the real desktop CLI executable over `WindowsApps` aliases
+- Fixed target CLI argument forwarding and added `--` handling for reserved Agent Switch options
+- Unified the public CLI help and version source, including the no-argument provider picker and OpenCode help
+- Hardened Codex/Hermes credential files and expanded capture-header redaction
+- Made Headroom doctor failures return a non-zero exit code
+- Added structured TOML parsing for the active Codex model provider
+- Added reproducible package builds, dependency auditing, and CI tarball drift checks
 
 ## Contributing
 

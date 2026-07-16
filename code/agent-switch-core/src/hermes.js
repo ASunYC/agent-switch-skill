@@ -11,6 +11,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { Store } from "./store.js";
 import { globalRoot } from "./paths.js";
+import { writePrivateJson } from "./secure-files.js";
 
 export const DEFAULT_HERMES_URL = "http://127.0.0.1:8642";
 
@@ -29,7 +30,8 @@ export function hermesAuthPath(env = process.env) {
 
 export function loadHermesAuth(env = process.env) {
   try {
-    return JSON.parse(fs.readFileSync(hermesAuthPath(env), "utf8"));
+    const raw = fs.readFileSync(hermesAuthPath(env), "utf8").replace(/^\uFEFF/, "");
+    return JSON.parse(raw);
   } catch {
     return null;
   }
@@ -37,14 +39,12 @@ export function loadHermesAuth(env = process.env) {
 
 export function saveHermesAuth(config, env = process.env) {
   const file = hermesAuthPath(env);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
-  // POSIX mode is set via writeFile options; on win32 chmod is a no-op for 0o600
-  // but try anyway in case the user is on a POSIX-like shell.
-  if (process.platform !== "win32") {
-    try { fs.chmodSync(file, 0o600); } catch {}
-  }
+  writePrivateJson(file, config);
   return file;
+}
+
+export function shouldPromptForAuth(error, isTTY = process.stdin.isTTY) {
+  return error instanceof HermesAuthError && Boolean(isTTY);
 }
 
 function resolveBaseUrl(opts, env, saved) {
@@ -402,6 +402,9 @@ async function runRepl({ baseUrl, authValue, model, store }) {
 }
 
 export async function hermesCmd(args, opts = {}) {
+  const parsed = parseHermesArgs(args, opts);
+  args = parsed.args;
+  opts = parsed.opts;
   const env = process.env;
   const saved = loadHermesAuth(env);
   const baseUrl = resolveBaseUrl(opts, env, saved);
@@ -415,8 +418,8 @@ export async function hermesCmd(args, opts = {}) {
       process.stdout.write(`hermes /health: ok${h.platform ? ` (platform=${h.platform})` : ""}\n`);
       return 0;
     } catch (e) {
-      if (e instanceof HermesAuthError && !authValue && process.stdin.isTTY) {
-        const prompted = await ensureAuth({ baseUrl, saved, env, promptIfMissing: true, forcePrompt: Boolean(saved?.authValue) });
+      if (shouldPromptForAuth(e)) {
+        const prompted = await ensureAuth({ baseUrl, saved, env, promptIfMissing: true, forcePrompt: Boolean(authValue) });
         authValue = prompted.authValue;
         try {
           const h = await checkHealth({ baseUrl, authValue });
@@ -573,4 +576,21 @@ export async function hermesCmd(args, opts = {}) {
     process.stderr.write(`agent-switch: ${e.message}\n`);
     return 1;
   }
+}
+
+function parseHermesArgs(args, opts) {
+  const next = { ...opts };
+  const positional = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--") {
+      positional.push(...args.slice(i + 1));
+      break;
+    }
+    if (arg === "--model") next.model = args[++i];
+    else if (arg === "--list-models") next.listModels = true;
+    else if (arg === "--health") next.health = true;
+    else positional.push(arg);
+  }
+  return { args: positional, opts: next };
 }

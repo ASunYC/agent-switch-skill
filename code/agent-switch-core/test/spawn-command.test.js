@@ -50,6 +50,22 @@ test("resolveWindowsCommand finds the Codex desktop CLI outside PATH", () => {
   assert.equal(resolveWindowsCommand("codex", env, "win32"), codex);
 });
 
+test("resolveWindowsCommand prefers a PATH npm shim over the Codex desktop fallback", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-switch-spawn-npm-codex-"));
+  const npmDir = path.join(root, "nodejs");
+  const localAppData = path.join(root, "AppData", "Local");
+  const desktopCodex = path.join(localAppData, "OpenAI", "Codex", "bin", "codex.exe");
+  const npmCodex = path.join(npmDir, "codex.cmd");
+  fs.mkdirSync(npmDir, { recursive: true });
+  fs.mkdirSync(path.dirname(desktopCodex), { recursive: true });
+  fs.writeFileSync(path.join(npmDir, "codex"), "");
+  fs.writeFileSync(npmCodex, "");
+  fs.writeFileSync(desktopCodex, "");
+  const env = { PATH: npmDir, PATHEXT: ".EXE;.CMD", LOCALAPPDATA: localAppData };
+
+  assert.equal(resolveWindowsCommand("codex", env, "win32"), npmCodex);
+});
+
 test("prepareSpawn runs Windows cmd shims through cmd.exe", () => {
   const { dir, file } = tempCommand("codex.cmd");
   const env = { PATH: dir, PATHEXT: ".EXE;.CMD", ComSpec: "C:\\Windows\\System32\\cmd.exe" };

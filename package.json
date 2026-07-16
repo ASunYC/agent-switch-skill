@@ -19,10 +19,12 @@
     "code/agent-switch-core/LICENSE",
     "references/",
     "scripts/install-agent-switch.js",
-    "scripts/build-agent-switch-package.js"
+    "scripts/build-agent-switch-package.js",
+    "scripts/spawn-portable.js"
   ],
   "scripts": {
     "build:package": "node scripts/build-agent-switch-package.js",
+    "check:package": "npm run build:package && git diff --exit-code -- cli",
     "test": "node --test code/agent-switch-core/test/*.js code/agent-switch/test/*.js"
   },
   "engines": {
@@ -33,12 +35,17 @@
     "@modelcontextprotocol/sdk",
     "cross-spawn",
     "headroom-ai",
+    "smol-toml",
     "zod"
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "cross-spawn": "^7.0.6",
     "headroom-ai": "^0.22.4",
+    "smol-toml": "^1.7.0",
     "zod": "^4.4.3"
+  },
+  "overrides": {
+    "hono": "^4.12.25"
   }
 }

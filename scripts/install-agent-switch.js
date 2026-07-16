@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnPortable } from "./spawn-portable.js";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const skillRoot = path.resolve(scriptDir, "..");
@@ -13,10 +13,8 @@ const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
 
 function run(command, args, options = {}) {
   process.stderr.write(`agent-switch installer: ${command} ${args.join(" ")}\n`);
-  const needsShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(command);
-  const result = spawnSync(command, args, {
+  const result = spawnPortable(command, args, {
     stdio: "inherit",
-    shell: needsShell,
     ...options,
   });
   if (result.error) {
@@ -27,10 +25,8 @@ function run(command, args, options = {}) {
 }
 
 function npmOutput(args) {
-  const needsShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(npmCmd);
-  const result = spawnSync(npmCmd, args, {
+  const result = spawnPortable(npmCmd, args, {
     encoding: "utf8",
-    shell: needsShell,
   });
   if (result.error || result.status !== 0) return null;
   return result.stdout.trim();
@@ -64,7 +60,7 @@ if (fs.existsSync(bundledPackage)) {
     `agent-switch installer: bundled CLI package not found: ${bundledPackage}\n` +
     "agent-switch installer: falling back to development install from the skill directory.\n"
   );
-  const depsStatus = run(npmCmd, ["install", "--omit=dev"], { cwd: skillRoot });
+  const depsStatus = run(npmCmd, ["ci", "--omit=dev"], { cwd: skillRoot });
   if (depsStatus !== 0) process.exit(depsStatus);
   installStatus = run(npmCmd, ["install", "-g", skillRoot]);
 }

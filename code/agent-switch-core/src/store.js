@@ -8,12 +8,18 @@ import path from "node:path";
 import { EventEmitter } from "node:events";
 import { packRecord, unpackRecord, gcBlobs } from "./blobs.js";
 
-const mask = (v) =>
-  String(v)
-    .replace(/(Bearer\s+\S{6})\S+(\S{4})/g, "$1...REDACTED...$2")
-    .replace(/(sk-ant-[\w-]{6})\S+(\S{4})/g, "$1...REDACTED...$2");
+const SENSITIVE_HEADERS = new Set([
+  "authorization",
+  "proxy-authorization",
+  "x-api-key",
+  "api-key",
+  "x-goog-api-key",
+  "cookie",
+  "set-cookie",
+]);
 
 const pad = (n) => String(n).padStart(4, "0");
+const SESSION_ID_RE = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$/;
 
 export class Store extends EventEmitter {
   constructor({ root, redact = true, format = "anthropic" }) {
@@ -21,9 +27,9 @@ export class Store extends EventEmitter {
     this.root = root;
     this.redact = redact;
     this.format = format;
-    this.sessionId = new Date().toISOString().replace(/[:.]/g, "-");
-    this.sessionDir = path.join(root, this.sessionId);
-    fs.mkdirSync(this.sessionDir, { recursive: true });
+    const session = createSessionDir(root);
+    this.sessionId = session.id;
+    this.sessionDir = session.dir;
     this.entries = [];
     this.seq = 0;
   }
@@ -33,7 +39,7 @@ export class Store extends EventEmitter {
     const c = { ...h };
     for (const k of Object.keys(c)) {
       const lk = k.toLowerCase();
-      if (lk === "authorization" || lk === "x-api-key") c[k] = mask(c[k]);
+      if (SENSITIVE_HEADERS.has(lk)) c[k] = "[REDACTED]";
     }
     return c;
   }
@@ -62,8 +68,17 @@ export class Store extends EventEmitter {
 
   update(rec) {
     if (rec.forwarded?.headers) rec.forwarded.headers = this._maskHeaders(rec.forwarded.headers);
+    if (rec.response?.headers) rec.response.headers = this._maskHeaders(rec.response.headers);
     this._persist(rec);
     this.emit("update", rec);
+  }
+
+  finalizePending(error = "client exited before the upstream response completed") {
+    for (const rec of this.entries) {
+      if (rec.response) continue;
+      rec.response = { error, finishedAt: Date.now() };
+      this.update(rec);
+    }
   }
 
   // Write the v2 manifest (request content split into content-addressed blobs).
@@ -121,11 +136,25 @@ export function summarize(rec) {
   };
 }
 
+export function createSessionDir(root, timestamp = Date.now()) {
+  fs.mkdirSync(root, { recursive: true });
+  for (let offset = 0; ; offset++) {
+    const id = new Date(timestamp + offset).toISOString().replace(/[:.]/g, "-");
+    const dir = path.join(root, id);
+    try {
+      fs.mkdirSync(dir);
+      return { id, dir };
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+    }
+  }
+}
+
 export function listSessions(root) {
   if (!fs.existsSync(root)) return [];
   return fs
     .readdirSync(root, { withFileTypes: true })
-    .filter((d) => d.isDirectory() && d.name !== "blobs")
+    .filter((d) => d.isDirectory() && SESSION_ID_RE.test(d.name))
     .map((d) => d.name)
     .sort()
     .reverse();

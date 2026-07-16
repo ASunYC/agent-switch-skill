@@ -12,6 +12,7 @@ import {
   saveCodexAuthAccount,
   saveCodexAuthAccountFromDir,
 } from "../src/codex-auth-store.js";
+import { PRIVATE_DIR_MODE, PRIVATE_FILE_MODE } from "../src/secure-files.js";
 
 function tempEnv() {
   return { AGENT_SWITCH_PROFILE_HOME: fs.mkdtempSync(path.join(os.tmpdir(), "agent-switch-codex-auth-")) };
@@ -57,6 +58,13 @@ test("saves, lists, injects, and removes Codex auth accounts", () => {
   assert.equal(injected.id, account.id);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(profileDir, "auth.json"), "utf8")), account.authJson);
   assert.ok(fs.existsSync(path.join(profileDir, ".agent-switch-codex-auth.json")));
+  assert.equal(PRIVATE_FILE_MODE, 0o600);
+  assert.equal(PRIVATE_DIR_MODE, 0o700);
+  if (process.platform !== "win32") {
+    assert.equal(fs.statSync(path.join(codexAuthStoreRoot(env), "accounts", `${account.id}.json`)).mode & 0o777, 0o600);
+    assert.equal(fs.statSync(path.join(profileDir, "auth.json")).mode & 0o777, 0o600);
+    assert.equal(fs.statSync(path.join(codexAuthStoreRoot(env), "accounts")).mode & 0o777, 0o700);
+  }
   assert.equal(listCodexAuthAccounts(env)[0].lastUsedAt != null, true);
 
   const removed = removeCodexAuthAccount(account.id, env);

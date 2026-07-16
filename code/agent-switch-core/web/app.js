@@ -46,6 +46,7 @@ const state = {
   profileName: null,
   compactEnabled: false,
   sessionStats: null,
+  providerLabel: null,
 };
 
 // ---- Segment system (inspired by Coralline / Powerlevel10k) --------------
@@ -396,7 +397,7 @@ async function loadDetail(id, token = state.loadToken) {
   renderDetail();
 }
 
-function renderEmptyDetail(message = "Select a request, or start chatting in Claude Code.") {
+function renderEmptyDetail(message = "Select a request, or start chatting in your agent.") {
   $("#detail").innerHTML = `<div class="empty">${esc(message)}</div>`;
   renderCurrentSummary();
   renderMonitorOverview();
@@ -872,7 +873,14 @@ async function loadMeta() {
     const data = await api("/api/meta");
     state.profileName = data.profileName || null;
     state.compactEnabled = Boolean(data.compactEnabled);
+    state.providerLabel = data.providerLabel || null;
+    updateTitle();
   } catch {}
+}
+
+function updateTitle() {
+  const label = state.providerLabel || "wire inspector";
+  document.title = `agent-switch - ${label}`;
 }
 
 loadMeta().then(() => loadSessions()).then(connectStream);

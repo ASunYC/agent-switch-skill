@@ -31,7 +31,10 @@ function candidateFiles(command, env = process.env) {
   const ext = path.extname(command);
   const bases = hasDir ? [command] : pathEntries(env).map((dir) => path.join(dir, command));
   if (ext) return bases;
-  return bases.flatMap((base) => [base, ...pathextEntries(env).map((pathext) => base + pathext)]);
+  return bases.flatMap((base) => [
+    ...(hasDir ? [base] : []),
+    ...pathextEntries(env).map((pathext) => base + pathext),
+  ]);
 }
 
 function knownWindowsCommandFiles(command, env = process.env) {
@@ -48,7 +51,7 @@ function isWindowsAppsPath(file) {
 
 export function resolveWindowsCommand(command, env = process.env, platform = process.platform) {
   if (platform !== "win32") return null;
-  const candidates = [...knownWindowsCommandFiles(command, env), ...candidateFiles(command, env)].filter(isFile);
+  const candidates = [...candidateFiles(command, env), ...knownWindowsCommandFiles(command, env)].filter(isFile);
   return candidates.find((file) => !isWindowsAppsPath(file)) || candidates[0] || null;
 }
 

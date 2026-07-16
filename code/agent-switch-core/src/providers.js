@@ -25,7 +25,8 @@ export const PROVIDERS = {
     envVar: "AZURE_OPENAI_ENDPOINT",
     upstream: "auto",
     autoUpstream: true,
-    note: "Codex Azure: set AZURE_OPENAI_ENDPOINT to your Azure OpenAI endpoint and AZURE_OPENAI_API_KEY to your key.",
+    codexAzure: true,
+    note: "Codex Azure: set AZURE_OPENAI_ENDPOINT to the full deployment Responses URL (including api-version) and AZURE_OPENAI_API_KEY to your key.",
   },
   codewhale: {
     label: "CodeWhale",
@@ -45,19 +46,19 @@ export const PROVIDERS = {
   },
   deepseek: {
     label: "CodeWhale (legacy deepseek)",
-    command: "deepseek",
+    command: "codewhale",
     format: "openai",
     envVar: "DEEPSEEK_BASE_URL",
     upstream: "https://api.deepseek.com",
-    note: "DeepSeek-TUI was renamed to CodeWhale. This legacy command is kept while upstream shims exist; make sure your DeepSeek key is set (DEEPSEEK_API_KEY).",
+    note: "DeepSeek-TUI was renamed to CodeWhale. This legacy agent-switch alias launches the current CodeWhale CLI; make sure your DeepSeek key is set (DEEPSEEK_API_KEY).",
   },
   "deepseek-tui": {
     label: "CodeWhale TUI (legacy deepseek-tui)",
-    command: "deepseek-tui",
+    command: "codewhale-tui",
     format: "openai",
     envVar: "DEEPSEEK_BASE_URL",
     upstream: "https://api.deepseek.com",
-    note: "DeepSeek-TUI was renamed to CodeWhale. This legacy command is kept while upstream shims exist; make sure your DeepSeek key is set (DEEPSEEK_API_KEY).",
+    note: "DeepSeek-TUI was renamed to CodeWhale. This legacy agent-switch alias launches the current CodeWhale TUI; make sure your DeepSeek key is set (DEEPSEEK_API_KEY).",
   },
   kimi: {
     label: "Kimi (Moonshot, via Claude Code)",
@@ -65,7 +66,8 @@ export const PROVIDERS = {
     format: "anthropic",
     envVar: "ANTHROPIC_BASE_URL",
     upstream: "https://api.moonshot.ai/anthropic",
-    note: "Kimi runs through Claude Code. Make sure your Moonshot key is set (ANTHROPIC_AUTH_TOKEN).",
+    kimi: true,
+    note: "Kimi runs through Claude Code. Set MOONSHOT_API_KEY (recommended) so credentials stay isolated from the active Claude provider.",
     mcp: true, // runs the `claude` binary, so --mcp-config works here too
   },
   openai: {
@@ -73,7 +75,7 @@ export const PROVIDERS = {
     command: null,
     format: "openai",
     envVar: "OPENAI_BASE_URL",
-    upstream: "https://api.openai.com",
+    upstream: "https://api.openai.com/v1",
   },
   opencode: {
     label: "OpenCode",
@@ -98,7 +100,7 @@ export const PROVIDERS = {
     command: null,
     format: "openai",
     envVar: "OPENAI_BASE_URL",
-    upstream: "http://127.0.0.1:11434",
+    upstream: "http://127.0.0.1:11434/v1",
     note: "Ollama serves an OpenAI-compatible API on port 11434. Override the address with --upstream if needed.",
   },
   lmstudio: {
@@ -106,7 +108,7 @@ export const PROVIDERS = {
     command: null,
     format: "openai",
     envVar: "OPENAI_BASE_URL",
-    upstream: "http://127.0.0.1:1234",
+    upstream: "http://127.0.0.1:1234/v1",
     note: "LM Studio serves an OpenAI-compatible API on port 1234. Override the address with --upstream if needed.",
   },
   openrouter: {
@@ -114,7 +116,7 @@ export const PROVIDERS = {
     command: null,
     format: "openai",
     envVar: "OPENAI_BASE_URL",
-    upstream: "https://openrouter.ai/api",
+    upstream: "https://openrouter.ai/api/v1",
     note: "OpenRouter is OpenAI-compatible. Set OPENAI_API_KEY to your OpenRouter key.",
   },
   bedrock: {
@@ -127,18 +129,20 @@ export const PROVIDERS = {
     envVar: "ANTHROPIC_BEDROCK_BASE_URL",
     upstream: "auto",
     autoUpstream: true,
+    runtimeEnv: { CLAUDE_CODE_USE_BEDROCK: "1" },
     mcp: true,
-    note: "Bedrock: set ANTHROPIC_BEDROCK_BASE_URL to your Bedrock endpoint before running (e.g. https://bedrock-runtime.us-east-1.amazonaws.com). AWS credentials are forwarded as-is.",
+    note: "Bedrock capture requires a gateway URL in ANTHROPIC_BEDROCK_BASE_URL. Direct amazonaws.com SigV4 requests cannot pass through a Host-rewriting proxy.",
   },
   vertex: {
     label: "Google Vertex AI (via Claude Code)",
     command: "claude",
     format: "anthropic",
-    envVar: "ANTHROPIC_BASE_URL",
+    envVar: "ANTHROPIC_VERTEX_BASE_URL",
     upstream: "auto",
     autoUpstream: true,
+    runtimeEnv: { CLAUDE_CODE_USE_VERTEX: "1" },
     mcp: true,
-    note: "Vertex AI: set ANTHROPIC_BASE_URL to your Vertex endpoint before running (e.g. https://us-east5-aiplatform.googleapis.com). GCP credentials are forwarded as-is.",
+    note: "Vertex AI: set ANTHROPIC_VERTEX_BASE_URL, ANTHROPIC_VERTEX_PROJECT_ID, and CLOUD_ML_REGION. Google credentials are forwarded as-is.",
   },
   hermes: {
     label: "Hermes (local)",

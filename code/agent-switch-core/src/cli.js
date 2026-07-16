@@ -8,6 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import net from "node:net";
 import { fileURLToPath } from "node:url";
+import { parse as parseToml } from "smol-toml";
 import { proxyArgs } from "./child-args.js";
 import { spawnCommand } from "./spawn-command.js";
 import { Store, hasCapturedLogs } from "./store.js";
@@ -34,18 +35,19 @@ import {
   resolveRunProfile,
   ProfileError,
 } from "./profiles.js";
+import { ensurePrivateDir } from "./secure-files.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const VERSION = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8")).version;
+const VERSION = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "..", "..", "package.json"), "utf8")).version;
 
 const HELP = `agent-switch v${VERSION} - see what your coding agent sends to the model
 
 USAGE
-  agent-switch                       Pick a client interactively (claude / codex / codewhale / deepseek / kimi)
+  agent-switch                       Pick a client interactively
   agent-switch claude [args...]      Inspect Claude Code
   agent-switch codex  [args...]      Inspect Codex (OpenAI)
   agent-switch codewhale [args...]   Inspect CodeWhale
-  agent-switch deepseek [args...]    Inspect DeepSeek-TUI legacy shim
+  agent-switch deepseek [args...]    Legacy alias for CodeWhale
   agent-switch kimi   [args...]      Inspect Kimi (Moonshot, via Claude Code)
   agent-switch opencode [args...]    Inspect OpenCode
   agent-switch hermes [args...]     Chat with local Hermes API (REPL or one-shot)
@@ -113,7 +115,7 @@ EXAMPLES
   agent-switch claude --profile claude/work
   agent-switch claude --resume       # show Claude Code's resume/session picker
   agent-switch codewhale
-  agent-switch codex-azure         # set AZURE_OPENAI_ENDPOINT first
+  agent-switch codex-azure         # set full AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_API_KEY first
   agent-switch deepseek
   agent-switch run --provider ollama -- my-openai-cli
   agent-switch run --provider openrouter -- my-openai-cli
@@ -124,6 +126,7 @@ EXAMPLES
   agent-switch hermes "hello"         # one-shot prompt
   agent-switch hermes --health        # check /health
   agent-switch hermes --list-models   # list /v1/models
+  agent-switch claude -- --profile x  # pass a reserved option to the target CLI
   agent-switch export <id> --format raw > request.http`;
 
 function parseArgs(argv) {
@@ -138,6 +141,10 @@ function parseArgs(argv) {
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
+    if (a === "--") {
+      rest.push(...argv.slice(i));
+      break;
+    }
     if (a === "--port") opts.port = Number(argv[++i]);
     else if (a === "--proxy-port") opts.proxyPort = Number(argv[++i]);
     else if (a === "--dir") opts.dir = path.resolve(argv[++i]);
@@ -148,18 +155,12 @@ function parseArgs(argv) {
     else if (a === "--no-redact") opts.redact = false;
     else if (a === "--no-mcp") opts.mcp = false;
     else if (a === "--profile") opts.profile = argv[++i];
-    else if (a === "--shared") opts.shared = true;
-    else if (a === "--yes" || a === "-y") opts.yes = true;
     else if (a === "--no-settings-override") opts.settingsOverride = false;
     else if (a === "--env-var") opts.envVar = argv[++i];
     else if (a === "--compact") opts.compact.enabled = true;
     else if (a === "--compact-engine") opts.compact.engine = argv[++i];
     else if (a === "--compact-base-url") opts.compact.baseUrl = argv[++i];
     else if (a === "--compact-fail") opts.compact.fail = argv[++i];
-    else if (a === "--format") opts.format = argv[++i];
-    else if (a === "--model") opts.model = argv[++i];
-    else if (a === "--list-models") opts.listModels = true;
-    else if (a === "--health") opts.health = true;
     else rest.push(a);
   }
   return { opts, rest };
@@ -232,39 +233,6 @@ function mcpArgs(opts) {
   return ["--mcp-config", JSON.stringify(config)];
 }
 
-// Run `codex doctor` and parse the auth mode / endpoint so we can warn the user
-// when Codex is configured with ChatGPT auth (wss:// websocket transport), which
-// bypasses OPENAI_BASE_URL and therefore never reaches our proxy.
-function detectCodexChatGPTAuth(env = process.env) {
-  return new Promise((resolve) => {
-    let output = "";
-    let settled = false;
-    const finish = (result) => { if (!settled) { settled = true; resolve(result); } };
-
-    let child;
-    try {
-      child = spawnCommand("codex", ["doctor"], { stdio: ["ignore", "pipe", "pipe"], env });
-    } catch {
-      return finish(null);
-    }
-
-    const timer = setTimeout(() => { try { child.kill(); } catch {} finish(null); }, 5000);
-    const collect = (d) => { output += d; };
-    child.stdout?.on("data", collect);
-    child.stderr?.on("data", collect);
-    child.on("error", () => { clearTimeout(timer); finish(null); });
-    child.on("close", () => {
-      clearTimeout(timer);
-      const authMatch = output.match(/auth\s+mode\s+(\S+)/i);
-      const endpointMatch = output.match(/endpoint\s+(\S+)/i);
-      finish({
-        authMode: authMatch?.[1]?.toLowerCase() ?? null,
-        endpoint: endpointMatch?.[1] ?? null,
-      });
-    });
-  });
-}
-
 // Read model_providers.*.base_url from ~/.codex/config.toml. Codex prioritizes
 // config.toml over OPENAI_BASE_URL, so we must read the configured upstream from
 // there and override it via -c flag when spawning codex.
@@ -272,9 +240,89 @@ function codexConfigBaseUrl(env = process.env) {
   const configRoot = env.CODEX_HOME || path.join(os.homedir(), ".codex");
   const configPath = path.join(configRoot, "config.toml");
   if (!fs.existsSync(configPath)) return null;
-  const toml = fs.readFileSync(configPath, "utf8");
-  const m = toml.match(/^\[model_providers\.(\S+)\][^\[]*?^base_url\s*=\s*"([^"]+)"/m);
-  return m ? { provider: m[1], baseUrl: m[2] } : null;
+  try {
+    const config = parseToml(fs.readFileSync(configPath, "utf8"));
+    const providers = config?.model_providers;
+    if (!providers || typeof providers !== "object") return null;
+    const active = typeof config.model_provider === "string" ? config.model_provider : null;
+    const candidates = active ? [[active, providers[active]]] : Object.entries(providers);
+    for (const [provider, value] of candidates) {
+      if (typeof value?.base_url === "string" && value.base_url) {
+        return { provider, baseUrl: value.base_url };
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function codexOpenAiBaseUrl(env = process.env) {
+  const configRoot = env.CODEX_HOME || path.join(os.homedir(), ".codex");
+  try {
+    const config = parseToml(fs.readFileSync(path.join(configRoot, "config.toml"), "utf8"));
+    return typeof config?.openai_base_url === "string" && config.openai_base_url
+      ? config.openai_base_url
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function codexBuiltInUpstream(env = process.env) {
+  const configRoot = env.CODEX_HOME || path.join(os.homedir(), ".codex");
+  try {
+    const raw = fs.readFileSync(path.join(configRoot, "auth.json"), "utf8").replace(/^\uFEFF/, "");
+    const auth = JSON.parse(raw);
+    const authMode = String(auth?.auth_mode || auth?.authMode || "").toLowerCase();
+    if (authMode === "chatgpt" || (auth?.tokens && typeof auth.tokens === "object")) {
+      return "https://chatgpt.com/backend-api/codex";
+    }
+  } catch {}
+  return "https://api.openai.com/v1";
+}
+
+function codexModelCatalog(env = process.env, homeDir = os.homedir()) {
+  const candidates = [
+    env.CODEX_HOME ? path.join(env.CODEX_HOME, "models_cache.json") : null,
+    path.join(homeDir, ".codex", "models_cache.json"),
+  ].filter(Boolean);
+  for (const candidate of [...new Set(candidates)]) {
+    try {
+      const catalog = JSON.parse(fs.readFileSync(candidate, "utf8").replace(/^\uFEFF/, ""));
+      if (Array.isArray(catalog?.models) && catalog.models.length) return candidate;
+    } catch {}
+  }
+  return null;
+}
+
+function codexProxyArgs(args, proxyUrl, codexConfig, provider = {}, modelCatalog = null) {
+  if (provider.codexAzure) {
+    const providerName = "agent_switch_azure";
+    const providerConfig = `{ name = "Agent Switch Azure", base_url = "${proxyUrl}", wire_api = "responses", env_http_headers = { "api-key" = "AZURE_OPENAI_API_KEY" }, supports_websockets = false }`;
+    return [
+      "-c", `model_providers.${providerName}=${providerConfig}`,
+      "-c", `model_provider="${providerName}"`,
+      ...(modelCatalog ? ["-c", `model_catalog_json=${JSON.stringify(modelCatalog)}`] : []),
+      ...args,
+    ];
+  }
+  if (codexConfig) {
+    const providerKey = `model_providers.${codexConfig.provider}`;
+    return [
+      "-c", `${providerKey}.base_url="${proxyUrl}"`,
+      "-c", `${providerKey}.supports_websockets=false`,
+      ...args,
+    ];
+  }
+
+  const providerName = "agent_switch_capture";
+  const providerConfig = `{ name = "Agent Switch Capture", base_url = "${proxyUrl}", wire_api = "responses", requires_openai_auth = true, supports_websockets = false }`;
+  return [
+    "-c", `model_providers.${providerName}=${providerConfig}`,
+    "-c", `model_provider="${providerName}"`,
+    ...args,
+  ];
 }
 // Read the provider's base-URL env var from Claude Code's settings.json env
 // block. A provider switcher (cc-switch etc.) writes the active provider's base
@@ -282,7 +330,7 @@ function codexConfigBaseUrl(env = process.env) {
 // shadow user settings in Claude Code's precedence, so check them in the same
 // order. The env var differs by mode: ANTHROPIC_BASE_URL for vanilla Claude,
 // ANTHROPIC_BEDROCK_BASE_URL when CLAUDE_CODE_USE_BEDROCK=1, etc.
-function settingsEnvBaseUrl(envVar, env = process.env) {
+function settingsEnvValue(envVar, env = process.env) {
   if (env.AGENT_SWITCH_IGNORE_CLAUDE_SETTINGS === "1") return null;
   const userSettings = env.CLAUDE_CONFIG_DIR
     ? path.join(env.CLAUDE_CONFIG_DIR, "settings.json")
@@ -299,6 +347,35 @@ function settingsEnvBaseUrl(envVar, env = process.env) {
     } catch {}
   }
   return null;
+}
+
+function settingsEnvBaseUrl(envVar, env = process.env) {
+  return settingsEnvValue(envVar, env);
+}
+
+function kimiRuntimeEnv(env = process.env, settingsBaseUrl = null, settingsToken) {
+  const configuredToken = settingsToken === undefined
+    ? settingsEnvValue("ANTHROPIC_AUTH_TOKEN", env)
+    : settingsToken;
+  const dedicatedToken = env.MOONSHOT_API_KEY || env.KIMI_API_KEY;
+  const settingsUseMoonshot = String(settingsBaseUrl || "").includes("moonshot.ai");
+  const inheritedToken = settingsUseMoonshot
+    ? (configuredToken || env.ANTHROPIC_AUTH_TOKEN)
+    : (!configuredToken ? env.ANTHROPIC_AUTH_TOKEN : null);
+  const token = dedicatedToken || inheritedToken;
+  if (!token) return null;
+
+  const model = env.MOONSHOT_MODEL || "kimi-k2.7-code";
+  return {
+    ANTHROPIC_AUTH_TOKEN: token,
+    ANTHROPIC_MODEL: model,
+    ANTHROPIC_DEFAULT_OPUS_MODEL: model,
+    ANTHROPIC_DEFAULT_SONNET_MODEL: model,
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: model,
+    CLAUDE_CODE_SUBAGENT_MODEL: model,
+    ENABLE_TOOL_SEARCH: "false",
+    CLAUDE_CODE_AUTO_COMPACT_WINDOW: "262144",
+  };
 }
 
 function headroomCommand() {
@@ -350,9 +427,16 @@ async function compactCmd(args, opts) {
       "If the proxy check fails, run: headroom proxy",
     ].join("\n") + "\n"
   );
+  return cli.ok && sdk.ok && proxy.ok ? 0 : 1;
 }
 
 function profileCmd(args, opts) {
+  opts = {
+    ...opts,
+    shared: args.includes("--shared"),
+    yes: args.includes("--yes") || args.includes("-y"),
+  };
+  args = args.filter((arg) => arg !== "--shared" && arg !== "--yes" && arg !== "-y");
   const sub = args[0];
   try {
     if (sub === "new") {
@@ -614,7 +698,7 @@ function targetInstallHint(command, provider, requestedCommand = command) {
       `  agent-switch codex\n`;
   }
   if (key === "codewhale" || key === "codewhale-tui" || key === "deepseek" || key === "deepseek-tui") {
-    return `\nInstall CodeWhale, the renamed DeepSeek-TUI CLI. It provides the new \`codewhale\` command and may provide legacy shims for \`deepseek\` / \`deepseek-tui\` during the transition.\n\n` +
+    return `\nInstall CodeWhale, the renamed DeepSeek-TUI CLI. Agent Switch maps its legacy \`deepseek\` / \`deepseek-tui\` aliases to the current CodeWhale commands.\n\n` +
       `Install CodeWhale:\n` +
       `  npm install -g codewhale\n` +
       `  cargo install codewhale-cli --locked\n` +
@@ -625,9 +709,12 @@ function targetInstallHint(command, provider, requestedCommand = command) {
   }
   if (key === "opencode") {
     return `\nInstall the OpenCode CLI that provides the \`opencode\` command, then reopen your terminal.\n\n` +
+      `Install OpenCode:\n` +
+      `  npm install -g opencode-ai\n\n` +
+      `Agent Switch captures one OpenAI-compatible upstream per run. Set OPENAI_BASE_URL or pass --upstream <url>.\n\n` +
       `After installing, verify with:\n` +
       `  opencode --help\n` +
-      `  agent-switch opencode\n`;
+      `  agent-switch opencode --upstream <url>\n`;
   }
   return `\nInstall '${command}' and make sure it is available in your PATH, then reopen your terminal.\n`;
 }
@@ -712,7 +799,7 @@ function resolveCodexAuthMenuChoice(answer, choices, accounts) {
 
 async function addCodexAuth() {
   const storeRoot = codexAuthStoreRoot();
-  fs.mkdirSync(storeRoot, { recursive: true });
+  ensurePrivateDir(storeRoot);
   const loginDir = fs.mkdtempSync(path.join(storeRoot, "login-"));
   process.stderr.write(
     `\nagent-switch: starting Codex login for a new saved auth.\n` +
@@ -860,24 +947,31 @@ async function wrap(command, args, opts) {
     }
   }
 
-  // Detect Codex ChatGPT-auth / websocket mode early so we can warn the user
-  // before opening the (otherwise empty) dashboard.
-  let codexChatGPTInfo = null;
-  if (provider.command === "codex") {
-    const info = await detectCodexChatGPTAuth(childBaseEnv);
-    if (info?.authMode === "chatgpt" || info?.endpoint?.startsWith("wss://")) {
-      codexChatGPTInfo = info;
-    }
-  }
-
   // If a provider switcher wrote ANTHROPIC_BASE_URL into settings.json and the
   // user didn't override --upstream, forward there by default (the plain claude
   // provider's default upstream is anthropic.com; kimi etc. keep their own).
   const settingsBaseUrl = claudeBased ? settingsEnvBaseUrl(provider.envVar, childBaseEnv) : null;
-  const codexBased = provider.command === "codex" && !provider.autoUpstream;
-  const codexConfig = codexBased ? codexConfigBaseUrl(childBaseEnv) : null;
+  const providerRuntimeEnv = provider.kimi ? kimiRuntimeEnv(childBaseEnv, settingsBaseUrl) : provider.runtimeEnv;
+  if (provider.kimi && !providerRuntimeEnv) {
+    process.stderr.write(
+      "agent-switch: Kimi needs a Moonshot API key that is separate from the active Claude provider.\n" +
+      "  Set MOONSHOT_API_KEY, then run: agent-switch kimi\n" +
+      "  ANTHROPIC_AUTH_TOKEN is also accepted when Claude settings already point to moonshot.ai.\n"
+    );
+    process.exit(1);
+  }
+  const runtimeEnv = { ...(providerRuntimeEnv || {}) };
+  const codexBased = provider.command === "codex";
+  const codexConfig = codexBased && !provider.codexAzure ? codexConfigBaseUrl(childBaseEnv) : null;
+  const codexOpenAiBase = codexBased && !provider.codexAzure && !codexConfig ? codexOpenAiBaseUrl(childBaseEnv) : null;
+  const codexBuiltInBase = codexBased && !provider.codexAzure && !codexConfig && !codexOpenAiBase
+    ? codexBuiltInUpstream(childBaseEnv)
+    : null;
+  const codexCatalog = provider.codexAzure ? codexModelCatalog(childBaseEnv) : null;
   let upstream = opts.upstream
     || (codexConfig && codexConfig.baseUrl)
+    || codexOpenAiBase
+    || codexBuiltInBase
     || (provider.upstream === "auto" ? null : provider.upstream);
   // autoUpstream: resolve upstream from the same env var we're about to override
   if (!upstream && provider.autoUpstream) upstream = childBaseEnv[provider.envVar];
@@ -891,6 +985,10 @@ async function wrap(command, args, opts) {
   }
   if (!opts.upstream && codexConfig) {
     process.stderr.write(`  \x1b[36m*\x1b[0m agent-switch: upstream from Codex config.toml ->${codexConfig.baseUrl}\n`);
+  } else if (!opts.upstream && codexOpenAiBase) {
+    process.stderr.write(`  \x1b[36m*\x1b[0m agent-switch: upstream from Codex openai_base_url ->${codexOpenAiBase}\n`);
+  } else if (!opts.upstream && codexBuiltInBase) {
+    process.stderr.write(`  \x1b[36m*\x1b[0m agent-switch: Codex built-in upstream ->${codexBuiltInBase}\n`);
   }
   // A provider switcher (e.g. cc-switch) may have set ANTHROPIC_BASE_URL directly in the
   // environment rather than in settings.json -pick it up so the proxy forwards to the
@@ -908,6 +1006,13 @@ async function wrap(command, args, opts) {
     );
     process.exit(1);
   }
+  if (provider.codexAzure && !childBaseEnv.AZURE_OPENAI_API_KEY) {
+    process.stderr.write(
+      "agent-switch: Codex Azure needs AZURE_OPENAI_API_KEY.\n" +
+      "  Set AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT, then run: agent-switch codex-azure\n"
+    );
+    process.exit(1);
+  }
 
   try {
     const parsedUpstream = new URL(upstream);
@@ -922,6 +1027,14 @@ async function wrap(command, args, opts) {
     );
     process.exit(1);
   }
+  if (provider.envVar === "ANTHROPIC_BEDROCK_BASE_URL" && new URL(upstream).hostname.endsWith(".amazonaws.com")) {
+    process.stderr.write(
+      "agent-switch: direct AWS Bedrock SigV4 traffic cannot be captured by the local proxy.\n" +
+      "  Use a Bedrock-compatible gateway, set ANTHROPIC_BEDROCK_BASE_URL to that gateway,\n" +
+      "  and set CLAUDE_CODE_SKIP_BEDROCK_AUTH=1 when the gateway handles authentication.\n"
+    );
+    process.exit(1);
+  }
 
   const localUpstreamError = await checkLocalUpstream(upstream);
   if (localUpstreamError) {
@@ -930,13 +1043,18 @@ async function wrap(command, args, opts) {
     process.exit(1);
   }
 
-  if (provider.mcp && opts.mcp) args = [...mcpArgs(opts), ...args];
+  if (claudeBased && provider.mcp && opts.mcp) args = [...mcpArgs(opts), ...args];
 
   maybeLegacyHint(process.cwd(), opts.dir);
 
   const store = new Store({ root: opts.dir, redact: opts.redact, format: provider.format });
+  if (process.env.AGENT_SWITCH_HANDOFF_FILE) {
+    try {
+      fs.writeFileSync(process.env.AGENT_SWITCH_HANDOFF_FILE, JSON.stringify({ session: store.sessionId }));
+    } catch {}
+  }
   const proxy = createProxy({ upstream, store, compact: opts.compact });
-  const dashboard = createServer({ roots: opts.readRoots, store, meta: { profileName: opts.profile || null, compactEnabled: opts.compact.enabled } });
+  const dashboard = createServer({ roots: opts.readRoots, store, meta: { profileName: opts.profile || null, compactEnabled: opts.compact.enabled, providerLabel: provider.label } });
 
   const proxyPort = await listen(proxy, opts.proxyPort);
   const dashPort = await listen(dashboard, opts.port);
@@ -948,30 +1066,6 @@ async function wrap(command, args, opts) {
   if (runProfile) {
     process.stderr.write(`  \x1b[36m*\x1b[0m agent-switch profile ${runProfile.spec} -> ${runProfile.dir}\n`);
   }
-  if (codexChatGPTInfo) {
-    const ep = codexChatGPTInfo.endpoint ? ` (${codexChatGPTInfo.endpoint})` : "";
-    process.stderr.write(
-      `  \x1b[33m!\x1b[0m  Codex is using ChatGPT auth${ep}.\n` +
-      `     This websocket transport bypasses OPENAI_BASE_URL -the dashboard will be empty.\n` +
-      `     To capture traffic, switch Codex to API-key mode (OPENAI_API_KEY).\n\n`
-    );
-  }
-  // Direct AWS Bedrock signs requests with SigV4, which covers the Host header.
-  // A reverse proxy rewrites Host before forwarding, so AWS rejects with a
-  // signature mismatch. The fix only works with Bedrock-compat gateways that
-  // don't sign on Host (bearer tokens, mTLS, etc.).
-  if (provider.envVar === "ANTHROPIC_BEDROCK_BASE_URL") {
-    try {
-      const host = new URL(upstream).hostname;
-      if (host.endsWith(".amazonaws.com")) {
-        process.stderr.write(
-          `  \x1b[33m!\x1b[0m  Direct AWS Bedrock (${host}) uses SigV4 signing that includes the Host header.\n` +
-          `     agent-switch rewrites Host when forwarding, so AWS will reject the proxied request.\n` +
-          `     Point ANTHROPIC_BEDROCK_BASE_URL at a Bedrock-compat gateway in front of AWS instead.\n\n`
-        );
-      }
-    } catch {}
-  }
   if (opts.open) openBrowser(dashUrl);
 
   // Command-line --settings outranks ~/.claude/settings.json and deep-merges
@@ -981,29 +1075,39 @@ async function wrap(command, args, opts) {
   if (claudeBased && opts.settingsOverride && !provider.noSettings) {
     if (settingsBaseUrl)
       process.stderr.write(`  \x1b[33mnote:\x1b[0m settings.json sets ${provider.envVar}=${settingsBaseUrl}; overriding it so claude hits the proxy\n`);
-    args = ["--settings", JSON.stringify({ env: { [provider.envVar]: proxyUrl } }), ...args];
+    args = ["--settings", JSON.stringify({ env: { ...runtimeEnv, [provider.envVar]: proxyUrl } }), ...args];
   }
 
-  // Codex config.toml base_url outranks OPENAI_BASE_URL. Override it via -c
-  // so codex talks to our proxy instead of going direct.
-  if (codexBased && codexConfig) {
-    const configKey = `model_providers.${codexConfig.provider}.base_url`;
+  // Disable Responses-over-WebSocket for captured Codex runs because the local
+  // proxy records HTTP/SSE traffic. Built-in OpenAI traffic uses an ephemeral
+  // provider so the user's config.toml remains untouched.
+  if (codexBased) {
+    const configKey = codexConfig
+      ? `model_providers.${codexConfig.provider}.base_url`
+      : "openai_base_url";
     // Use proxyUrl (origin only, no path). Codex appends the endpoint path
     // (e.g. /responses) to base_url. The upstream URL retains the /v1 prefix,
     // so proxy receives /responses and correctly forwards to /v1/responses.
-    args = ["-c", `${configKey}="${proxyUrl}"`, ...args];
-    if (codexConfig.baseUrl)
+    args = codexProxyArgs(args, proxyUrl, codexConfig, provider, codexCatalog);
+    if (provider.codexAzure)
+      process.stderr.write("  \x1b[33mnote:\x1b[0m routing Codex Azure Responses traffic through the capture proxy\n");
+    else if (codexConfig?.baseUrl)
       process.stderr.write(`  \x1b[33mnote:\x1b[0m config.toml sets ${configKey}=${codexConfig.baseUrl}; overriding via -c\n`);
+    else if (codexOpenAiBase)
+      process.stderr.write(`  \x1b[33mnote:\x1b[0m config.toml sets openai_base_url=${codexOpenAiBase}; overriding via -c\n`);
+    else
+      process.stderr.write("  \x1b[33mnote:\x1b[0m routing Codex built-in OpenAI traffic through the capture proxy\n");
   }
 
   const spawnCmd = provider.command || command;
   releaseStdinForChild();
   const child = spawnCommand(spawnCmd, args, {
     stdio: "inherit",
-    env: { ...childBaseEnv, [provider.envVar]: proxyUrl },
+    env: { ...childBaseEnv, ...runtimeEnv, [provider.envVar]: proxyUrl },
   });
 
   const shutdown = (code) => {
+    store.finalizePending();
     proxy.close();
     dashboard.close();
     process.exit(code ?? 0);
@@ -1052,8 +1156,8 @@ export async function main(argv) {
 
   const cmd = rest[0];
 
-  if (rest.includes("-h") || rest.includes("--help")) return void process.stdout.write(HELP + "\n");
-  if (rest.includes("-v") || rest.includes("--version")) return void process.stdout.write(VERSION + "\n");
+  if (cmd === "-h" || cmd === "--help") return void process.stdout.write(HELP + "\n");
+  if (cmd === "-v" || cmd === "--version") return void process.stdout.write(VERSION + "\n");
 
   if (cmd === "dashboard" || cmd === "webui" || cmd === "view") return view(opts);
   if (cmd === "compact") return compactCmd(rest.slice(1), opts);
@@ -1062,7 +1166,11 @@ export async function main(argv) {
   if (cmd === "migrate") return migrate(opts);
   if (cmd === "repack") { opts.session = rest[1]; return repack(opts); }
   if (cmd === "rm") return rmCmd(rest[1], opts);
-  if (cmd === "export") return exportEntry(rest[1], opts);
+  if (cmd === "export") {
+    const formatIndex = rest.indexOf("--format");
+    if (formatIndex >= 0) opts.format = rest[formatIndex + 1];
+    return exportEntry(rest[1], opts);
+  }
   if (cmd === "run") {
     const dashIdx = rest.indexOf("--");
     const cmdArgs = dashIdx >= 0 ? rest.slice(dashIdx + 1) : rest.slice(1);
@@ -1078,5 +1186,22 @@ export async function main(argv) {
   }
 
   // Default: treat the first token as a provider/command to wrap.
-  return wrap(cmd, rest.slice(1), opts);
+  return wrap(cmd, targetArgs(rest.slice(1)), opts);
 }
+
+function targetArgs(args) {
+  const separator = args.indexOf("--");
+  if (separator < 0) return args;
+  return [...args.slice(0, separator), ...args.slice(separator + 1)];
+}
+
+export const internals = {
+  codexBuiltInUpstream,
+  codexConfigBaseUrl,
+  codexModelCatalog,
+  codexOpenAiBaseUrl,
+  codexProxyArgs,
+  kimiRuntimeEnv,
+  parseArgs,
+  targetArgs,
+};

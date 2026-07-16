@@ -170,6 +170,7 @@ function apiMeta(meta) {
   return {
     profileName: meta?.profileName || null,
     compactEnabled: Boolean(meta?.compactEnabled),
+    providerLabel: meta?.providerLabel || null,
   };
 }
 
