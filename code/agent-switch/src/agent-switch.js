@@ -26,7 +26,7 @@ export async function main(argv, io = process) {
   const session = readHandoffSession(handoffFile);
   fs.rmSync(handoffFile, { force: true });
 
-  if (shouldPrintHandoff(argv)) {
+  if (shouldPrintHandoff(argv, session)) {
     io.stderr.write(renderHandoff({ cwd, captureRoot, before, code, session }));
   }
 
@@ -119,8 +119,12 @@ function signalNumber(signal) {
   return signals[signal] ?? 1;
 }
 
-function shouldPrintHandoff(argv) {
+function shouldPrintHandoff(argv, session = null) {
   const cmd = argv[0];
+  // With no explicit command the core CLI opens its provider picker. A
+  // handoff file means the user selected a provider and a capture run began;
+  // no file means the picker was cancelled (or only help was printed).
+  if (!cmd) return Boolean(session);
   if (PASS_THROUGH.has(cmd)) return false;
   if (cmd === "run") return true;
   return !cmd.startsWith("-");

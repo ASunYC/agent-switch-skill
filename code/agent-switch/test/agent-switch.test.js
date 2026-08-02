@@ -25,6 +25,8 @@ test("detects explicit capture directory", () => {
 
 test("prints handoff for provider runs only", () => {
   assert.equal(internals.shouldPrintHandoff(["claude"]), true);
+  assert.equal(internals.shouldPrintHandoff([]), false);
+  assert.equal(internals.shouldPrintHandoff([], "picker-session"), true);
   assert.equal(internals.shouldPrintHandoff(["run", "--provider", "openai", "--", "tool"]), true);
   assert.equal(internals.shouldPrintHandoff(["dashboard"]), false);
   assert.equal(internals.shouldPrintHandoff(["webui"]), false);
