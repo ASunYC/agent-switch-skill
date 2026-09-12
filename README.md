@@ -734,15 +734,17 @@ Current Agent Switch releases route both ChatGPT-login and API-key Codex session
 
 New captures are stored under `~/.agent-switch/sessions/<encoded-project-path>-<hash>/`. Use `agent-switch dashboard` to browse them or `agent-switch export <id>` to export one request.
 
-### Can I delete captured data?
+### How do I delete a captured session?
 
-Yes. Use:
+Open `agent-switch dashboard` to find the session ID, then delete that session from the current project's capture store:
 
 ```bash
 agent-switch rm <session>
 ```
 
-You can also remove the local `~/.agent-switch` directory manually if you want to clear all saved captures.
+Replace `<session>` with the session ID, not a request ID such as `<session>/0001`. The command also reclaims blobs that are no longer referenced by other sessions in that store.
+
+The `~/.agent-switch` directory also holds CLI profiles, saved account credentials, and Hermes configuration. Deleting the entire directory removes those settings along with captures; use the session command above when you only want to clean up logs.
 
 ## Changelog
 
