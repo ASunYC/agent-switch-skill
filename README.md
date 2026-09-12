@@ -16,6 +16,8 @@
 
 ## Overview
 
+[Installation](#installation) · [Quick start](#quick-start) · [Supported providers](#supported-providers) · [Troubleshooting](#faq) · [Contributing](#contributing)
+
 Agent Switch Skill packages the `agent-switch` command as an installable agent skill. It lets Codex, Claude Code, CodeWhale, OpenCode, and other coding agents delegate work to another CLI while recording the model API traffic that passes through the local capture proxy.
 
 It helps you:
@@ -167,6 +169,10 @@ This is the release shape used by `scripts/install-agent-switch.js`, so a cloned
 ## Usage
 
 ### Quick Start
+
+You need Node.js 18+ and an installed, configured target CLI. Agent Switch installs the capture tooling; it does not install or sign in to the coding CLI for you. Verify the target directly (for example, `claude --version`) before wrapping it.
+
+For a first capture, run `agent-switch claude`, send a prompt in Claude Code, and open the dashboard URL printed in the terminal. After exiting Claude Code, run `agent-switch dashboard` to revisit the saved session. Capture runs do not open a browser unless you pass `--open`.
 
 ```bash
 # Pick a CLI from a searchable terminal picker
@@ -669,11 +675,11 @@ Runtime captures are stored under:
 
 ```text
 ~/.agent-switch/sessions/
-|-- <encoded-project-path>-<hash>/
-|   `-- <session>/
-|       |-- 0001.json
-|       `-- ...
-`-- blobs/
+`-- <encoded-project-path>-<hash>/
+    |-- <session>/
+    |   |-- 0001.json
+    |   `-- ...
+    `-- blobs/
 ```
 
 The dashboard can also read legacy project-local logs from:
@@ -776,7 +782,18 @@ You can help by:
 
 Please open an issue or pull request on GitHub:
 
-https://github.com/ASunYC/agent-switch-skill/issues
+[Report an issue](https://github.com/ASunYC/agent-switch-skill/issues) or [open a pull request](https://github.com/ASunYC/agent-switch-skill/pulls).
+
+For compatibility reports, include your OS, Node.js version, target CLI version, the command you ran, and the expected versus actual behavior. Remove credentials and private prompt content from logs before sharing them.
+
+To work on the source locally:
+
+```bash
+npm ci
+npm test
+```
+
+On Windows PowerShell, use `npm.cmd` if the execution policy blocks `npm.ps1`. When changing files included in the CLI package (including this README), run `npm run build:package` and commit the updated tarball alongside the source changes. CI checks that the bundled package matches the repository.
 
 ## License
 
