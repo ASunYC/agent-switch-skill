@@ -72,7 +72,7 @@ The installer installs the bundled CLI package from `cli/`, verifies `agent-swit
 - **Dashboard with segments**: browse saved logs in a local web UI with configurable info segments
 - **Session-wide stats**: live totals for tokens (input/output/cache), cost, status rate, and compact savings
 - **Exports**: write captured requests as `raw`, `md`, `json`, or `har`
-- **Provider wrappers**: support Claude Code, Codex, CodeWhale, DeepSeek-TUI legacy shims, Kimi, OpenCode, and compatible gateways
+- **Provider wrappers**: support Claude Code, Codex, CodeWhale, DeepSeek-TUI legacy shims, Kimi, OpenCode, Pi, and compatible gateways
 - **CLI profiles**: isolate Claude Code, Codex, and OpenCode accounts/configs under `~/.agent-switch/profiles`
 - **Custom commands**: wrap arbitrary CLIs with `agent-switch run --provider <provider> -- <cmd...>`
 - **Storage migration**: move legacy project logs into the global store
@@ -229,6 +229,12 @@ agent-switch claude --resume
 agent-switch codex --model gpt-5
 agent-switch codewhale
 agent-switch opencode
+
+# Start Pi Coding Agent with Anthropic traffic captured
+agent-switch pi
+
+# Capture Pi's OpenAI provider instead
+agent-switch pi --pi-provider openai
 ```
 
 Agent Switch options can appear before the target arguments. If the target CLI uses an option reserved by Agent Switch, place `--` before that target option. The separator is removed before the target starts:
@@ -421,6 +427,17 @@ OpenCode can configure several providers at once, while one Agent Switch capture
 agent-switch opencode --upstream https://api.openai.com
 ```
 
+For Pi, install the CLI separately with [Pi's documented npm package](https://pi.dev/docs/latest/quickstart):
+
+```bash
+npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+pi --help
+agent-switch pi
+agent-switch pi --pi-provider openai
+```
+
+Agent Switch uses Pi's per-run extension API to route the selected provider through its capture proxy; it does not edit `~/.pi/agent/models.json` or Pi credentials. The default is `anthropic`; use `--pi-provider openai` for OpenAI, or pass Pi's `--provider` after `--` (for example, `agent-switch pi -- --provider openai`). Existing `models.json` base URLs for these providers are used as the upstream unless `--upstream` overrides them. Only the selected provider is captured: switching to another provider inside Pi will bypass the proxy, so start a new capture run for that provider. Other Pi providers are not yet supported by this capture mode.
+
 For Codex on Windows, Agent Switch first tries the real `codex` executable on `PATH`, then checks the desktop install path:
 
 ```text
@@ -532,6 +549,7 @@ agent-switch rm <session>
 | `deepseek-tui` | `agent-switch deepseek-tui` | Legacy alias that launches the current CodeWhale TUI |
 | `kimi` | `agent-switch kimi` | Start Claude Code against Kimi / Moonshot using an isolated `MOONSHOT_API_KEY` |
 | `opencode` | `agent-switch opencode` | Start OpenCode with capture enabled |
+| `pi` | `agent-switch pi --pi-provider openai` | Start Pi and capture one selected provider |
 | `hermes` | `agent-switch hermes "hello"` | Chat with the local Docker-hosted Hermes API |
 | `run` | `agent-switch run --provider openai -- my-cli` | Wrap an arbitrary compatible CLI |
 | `dashboard` | `agent-switch dashboard` | Open the dashboard over saved logs |
@@ -565,6 +583,7 @@ agent-switch rm <session>
 | `--no-redact` | Save auth headers without masking them |
 | `--no-mcp` | Do not inject Agent Switch MCP tools into Claude Code |
 | `--profile <name|tool/name>` | Codex auth picker/injection, or isolated Claude Code/OpenCode config profile |
+| `--pi-provider anthropic\|openai` | Select which Pi provider to capture (default: Anthropic) |
 | `--env-var <name>` | Override which environment variable receives the proxy URL |
 
 ## Supported Providers
@@ -581,6 +600,7 @@ Built-in provider recipes include:
 - `kimi`
 - `openai`
 - `opencode`
+- `pi` (Anthropic or OpenAI model provider)
 - `ollama`
 - `lmstudio`
 - `openrouter`

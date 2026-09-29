@@ -162,6 +162,13 @@ test("opencode is available in the interactive picker", () => {
   assert.ok(PICKABLE.includes("opencode"));
 });
 
+test("pi is available in the picker with process-scoped proxy setup", () => {
+  const provider = resolveProvider("pi");
+  assert.equal(provider.command, "pi");
+  assert.equal(provider.pi, true);
+  assert.ok(PICKABLE.includes("pi"));
+});
+
 test("kimi provider enables isolated Moonshot runtime configuration", () => {
   const provider = resolveProvider("kimi");
 

@@ -1,6 +1,6 @@
 ---
 name: agent-switch-skill
-description: Install and operate the bundled agent-switch tooling for switching between coding CLIs while capturing their model conversations. Use when the user wants to deploy this skill, inspect Claude Code/Codex/DeepSeek/Kimi/OpenCode prompts and tool calls, manage isolated CLI profiles/accounts, view or export agent-switch logs, or run commands like `agent-switch claude` so another CLI can work and return a handoff summary to Codex.
+description: Install and operate the bundled agent-switch tooling for switching between coding CLIs while capturing their model conversations. Use when the user wants to deploy this skill, inspect Claude Code/Codex/DeepSeek/Kimi/OpenCode/Pi prompts and tool calls, manage isolated CLI profiles/accounts, view or export agent-switch logs, or run commands like `agent-switch claude` so another CLI can work and return a handoff summary to Codex.
 ---
 
 # Agent Switch Skill
@@ -62,6 +62,8 @@ agent-switch claude --resume
 agent-switch codex
 agent-switch codewhale
 agent-switch deepseek
+agent-switch pi
+agent-switch pi --pi-provider openai
 # Set MOONSHOT_API_KEY before using the Kimi provider.
 agent-switch kimi
 agent-switch run --provider openai -- my-openai-compatible-cli
@@ -222,6 +224,8 @@ For OpenCode, install `opencode-ai`. Because OpenCode may contain several provid
 npm install -g opencode-ai
 agent-switch opencode --upstream <url>
 ```
+
+For Pi, install `@earendil-works/pi-coding-agent` separately. `agent-switch pi` captures Pi's Anthropic provider by default; `agent-switch pi --pi-provider openai` captures OpenAI instead. The process-scoped Pi extension overrides only that provider's base URL, without modifying Pi's persistent `models.json` or credentials. The upstream comes from that provider's `models.json` entry when present, otherwise the provider default; `--upstream` overrides it. Changing Pi providers mid-session bypasses capture, so start a new run for the other provider. Other Pi providers are not supported yet.
 
 ## Local Upstream Troubleshooting
 

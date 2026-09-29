@@ -16,6 +16,7 @@ import { exportEntry, migrate, repack, rmCmd } from "./log-cli.js";
 import { createProxy } from "./proxy.js";
 import { createServer } from "./server.js";
 import { resolveProvider, PROVIDERS, PICKABLE } from "./providers.js";
+import { preparePi } from "./pi.js";
 import { globalRoot, legacyRoot, readRoots } from "./paths.js";
 import { checkHeadroomProxy, checkHeadroomSdk, DEFAULT_COMPACT, isClaudeCompactProvider } from "./compact.js";
 import {
@@ -50,6 +51,7 @@ USAGE
   agent-switch deepseek [args...]    Legacy alias for CodeWhale
   agent-switch kimi   [args...]      Inspect Kimi (Moonshot, via Claude Code)
   agent-switch opencode [args...]    Inspect OpenCode
+  agent-switch pi [args...]          Inspect Pi Coding Agent (Anthropic or OpenAI)
   agent-switch hermes [args...]     Chat with local Hermes API (REPL or one-shot)
   agent-switch run [--provider P] -- <cmd...>   Inspect any client
   agent-switch dashboard             View saved logs (no capture, browse-only)
@@ -72,6 +74,7 @@ OPTIONS
                               deepseek|deepseek-tui|kimi|openai|opencode
                               glm|ollama|lmstudio|openrouter|bedrock|vertex
   --upstream <url>    Override the upstream API (alias: --base-url)
+  --pi-provider <p>   Pi model provider to capture: anthropic|openai (default: anthropic)
   --base-url <url>    Alias for --upstream
   --port <n>          Dashboard port (default: auto)
   --proxy-port <n>    Proxy port (default: auto)
@@ -115,6 +118,8 @@ EXAMPLES
   agent-switch claude --profile claude/work
   agent-switch claude --resume       # show Claude Code's resume/session picker
   agent-switch codewhale
+  agent-switch pi                         # capture Pi's Anthropic models
+  agent-switch pi --pi-provider openai    # capture Pi's OpenAI models
   agent-switch codex-azure         # set full AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_API_KEY first
   agent-switch deepseek
   agent-switch run --provider ollama -- my-openai-cli
@@ -150,6 +155,7 @@ function parseArgs(argv) {
     else if (a === "--dir") opts.dir = path.resolve(argv[++i]);
     else if (a === "--upstream" || a === "--base-url") opts.upstream = argv[++i];
     else if (a === "--provider") opts.provider = argv[++i];
+    else if (a === "--pi-provider") opts.piProvider = argv[++i];
     else if (a === "--open") opts.open = true;
     else if (a === "--no-open") opts.open = false;
     else if (a === "--no-redact") opts.redact = false;
@@ -716,6 +722,12 @@ function targetInstallHint(command, provider, requestedCommand = command) {
       `  opencode --help\n` +
       `  agent-switch opencode --upstream <url>\n`;
   }
+  if (key === "pi") {
+    return `\nInstall Pi Coding Agent separately, then reopen your terminal:\n\n` +
+      `  npm install -g --ignore-scripts @earendil-works/pi-coding-agent\n\n` +
+      `Verify with: pi --help\n` +
+      `Then run: agent-switch pi --pi-provider anthropic\n`;
+  }
   return `\nInstall '${command}' and make sure it is available in your PATH, then reopen your terminal.\n`;
 }
 
@@ -914,7 +926,30 @@ function hasCodexSessions(profileDir) {
 }
 
 async function wrap(command, args, opts) {
+  if (command !== "pi" && opts.provider === "pi") {
+    process.stderr.write("agent-switch: Pi capture requires agent-switch pi, not a generic --provider override.\n");
+    process.exit(1);
+  }
+  if (command === "pi" && (opts.provider || opts.envVar)) {
+    process.stderr.write("agent-switch: Pi uses --pi-provider, not --provider or --env-var.\n");
+    process.exit(1);
+  }
+  if (command !== "pi" && opts.piProvider) {
+    process.stderr.write("agent-switch: --pi-provider is only valid with agent-switch pi.\n");
+    process.exit(1);
+  }
   const provider = resolveProvider(command, opts.provider, opts.envVar);
+  let piCapture = null;
+  if (provider.pi) {
+    try {
+      piCapture = preparePi(args, opts.piProvider);
+      args = piCapture.args;
+      provider.format = piCapture.format;
+    } catch (error) {
+      process.stderr.write(`agent-switch: ${error.message}\n`);
+      process.exit(1);
+    }
+  }
   let runProfile = null;
   try {
     runProfile = resolveRunProfile(provider, opts.profile, process.env, {
@@ -969,6 +1004,7 @@ async function wrap(command, args, opts) {
     : null;
   const codexCatalog = provider.codexAzure ? codexModelCatalog(childBaseEnv) : null;
   let upstream = opts.upstream
+    || piCapture?.upstream
     || (codexConfig && codexConfig.baseUrl)
     || codexOpenAiBase
     || codexBuiltInBase
@@ -1060,7 +1096,14 @@ async function wrap(command, args, opts) {
   const dashPort = await listen(dashboard, opts.port);
   const dashUrl = `http://127.0.0.1:${dashPort}`;
   const proxyUrl = `http://127.0.0.1:${proxyPort}`;
-  args = proxyArgs(args, provider.envVar, proxyUrl, childBaseEnv, upstream);
+  if (piCapture) {
+    // Pi does not use a generic base-URL environment variable. Its documented
+    // extension API can override one provider for this run without touching
+    // the user's persistent models.json or credentials.
+    args = ["-e", path.join(__dirname, "pi-proxy-extension.js"), ...args];
+  } else {
+    args = proxyArgs(args, provider.envVar, proxyUrl, childBaseEnv, upstream);
+  }
 
   process.stderr.write(banner(dashUrl, provider, upstream));
   if (runProfile) {
@@ -1098,12 +1141,20 @@ async function wrap(command, args, opts) {
     else
       process.stderr.write("  \x1b[33mnote:\x1b[0m routing Codex built-in OpenAI traffic through the capture proxy\n");
   }
+  if (piCapture) {
+    process.stderr.write(`  \x1b[33mnote:\x1b[0m capturing Pi provider ${piCapture.provider}; switching to another provider inside Pi will bypass capture\n`);
+  }
 
   const spawnCmd = provider.command || command;
   releaseStdinForChild();
   const child = spawnCommand(spawnCmd, args, {
     stdio: "inherit",
-    env: { ...childBaseEnv, ...runtimeEnv, [provider.envVar]: proxyUrl },
+    env: {
+      ...childBaseEnv,
+      ...runtimeEnv,
+      [provider.envVar]: proxyUrl,
+      ...(piCapture ? { AGENT_SWITCH_PI_PROVIDER: piCapture.provider } : {}),
+    },
   });
 
   const shutdown = (code) => {

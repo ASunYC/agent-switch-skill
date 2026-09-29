@@ -10,6 +10,7 @@ The bundled code in `code/agent-switch-core` is the internal capture engine for 
 - `deepseek` and `deepseek-tui`: legacy Agent Switch aliases mapped to the current `codewhale` and `codewhale-tui` binaries.
 - `kimi`: Claude Code pointed at Moonshot's Anthropic-compatible endpoint. Agent Switch prefers `MOONSHOT_API_KEY` and injects the current `kimi-k2.7-code` model settings so an unrelated Claude/cc-switch provider cannot leak into the run.
 - `opencode`: OpenCode through one OpenAI-compatible upstream selected by `OPENAI_BASE_URL` or `--upstream` for each run.
+- `pi`: Pi Coding Agent through its per-run extension API. Captures one selected `anthropic` (default) or `openai` provider; `--pi-provider` selects it and `--upstream` overrides its configured `models.json` base URL. Switching Pi providers mid-session bypasses capture.
 - `ollama`, `lmstudio`, `openrouter`, `glm`, `bedrock`, `vertex`: built-in provider recipes.
 - `vertex` injects `CLAUDE_CODE_USE_VERTEX=1` and uses `ANTHROPIC_VERTEX_BASE_URL`; project, region, and Google credentials remain user-managed.
 - `bedrock` injects `CLAUDE_CODE_USE_BEDROCK=1` and supports Bedrock-compatible gateways. Direct AWS SigV4 endpoints are rejected because a Host-rewriting proxy invalidates the signature.

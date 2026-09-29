@@ -86,6 +86,15 @@ export const PROVIDERS = {
     autoUpstream: true,
     noSettings: true,       // OpenCode doesn't use --settings flag like Claude Code
   },
+  pi: {
+    label: "Pi Coding Agent",
+    command: "pi",
+    format: "anthropic",
+    envVar: "AGENT_SWITCH_PI_PROXY_URL",
+    upstream: "auto",
+    pi: true,
+    note: "Only the selected Pi provider is routed through capture. Switching providers inside Pi bypasses this proxy.",
+  },
   glm: {
     label: "GLM / Zhipu AI",
     command: null,
@@ -154,7 +163,7 @@ export const PROVIDERS = {
   },
 };
 
-export const PICKABLE = ["claude", "codex", "codewhale", "deepseek", "kimi", "opencode"]; // shown in the no-arg picker
+export const PICKABLE = ["claude", "codex", "codewhale", "deepseek", "kimi", "opencode", "pi"]; // shown in the no-arg picker
 
 // Resolve a provider from a CLI token (e.g. "claude"), falling back to a custom
 // command wrapped under an explicit --provider.

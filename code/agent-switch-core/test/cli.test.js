@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
+import http from "node:http";
 import * as cliModule from "../src/cli.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -90,6 +91,58 @@ test("opencode exits with code 1 and a clear error when OPENAI_BASE_URL is empty
   assert.equal(code, 1);
   assert.match(stderr, /OpenCode/);
   assert.match(stderr, /OPENAI_BASE_URL/);
+});
+
+test("pi routes the selected provider through capture without editing Pi config", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-switch-pi-integration-"));
+  const captureDir = path.join(dir, "captures");
+  const fakePi = path.join(dir, "fake-pi.mjs");
+  const piCommand = path.join(dir, process.platform === "win32" ? "pi.cmd" : "pi");
+  fs.writeFileSync(fakePi, `import { pathToFileURL } from "node:url";
+const args = process.argv.slice(2);
+const extension = (await import(pathToFileURL(args[args.indexOf("-e") + 1]).href)).default;
+let registration;
+extension({ registerProvider: (name, config) => { registration = { name, config }; } });
+const response = await fetch(registration.config.baseUrl + "/responses", {
+  method: "POST", headers: { "content-type": "application/json" },
+  body: JSON.stringify({ model: "test-model", input: "hello" }),
+});
+if (!response.ok) process.exit(2);
+process.stdout.write(JSON.stringify({ args, provider: registration.name }));
+`);
+  if (process.platform === "win32") {
+    fs.writeFileSync(piCommand, `@echo off\r\n"${process.execPath}" "%~dp0fake-pi.mjs" %*\r\n`);
+  } else {
+    fs.writeFileSync(piCommand, `#!/bin/sh\nexec "${process.execPath}" "$(dirname "$0")/fake-pi.mjs" "$@"\n`, { mode: 0o755 });
+  }
+  let upstreamRequest = null;
+  const upstream = http.createServer((req, res) => {
+    upstreamRequest = { method: req.method, url: req.url };
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ output: [] }));
+    });
+  });
+  try {
+    await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+    const url = `http://127.0.0.1:${upstream.address().port}`;
+    const pathValue = `${dir}${path.delimiter}${process.env.PATH || ""}`;
+    const result = await run(["pi", "--pi-provider", "openai", "--upstream", url, "--dir", captureDir, "--", "-p", "hello"], {
+      PATH: pathValue,
+      Path: pathValue,
+    });
+    assert.equal(result.code, 0, result.stderr);
+    assert.deepEqual(upstreamRequest, { method: "POST", url: "/responses" });
+    assert.match(result.stdout, /"provider":"openai"/);
+    const session = fs.readdirSync(captureDir).find((name) => fs.statSync(path.join(captureDir, name)).isDirectory() && name !== "blobs");
+    assert.ok(session);
+    const manifest = JSON.parse(fs.readFileSync(path.join(captureDir, session, "0001.json"), "utf8"));
+    assert.equal(manifest.format, "openai");
+  } finally {
+    upstream.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("codex-azure exits with code 1 and a clear error when AZURE_OPENAI_ENDPOINT is unset", async () => {
