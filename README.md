@@ -12,6 +12,8 @@
 
 </div>
 
+[Project guide](https://asunyc.github.io/agent-switch/) · [Issue tracker](https://github.com/ASunYC/agent-switch-skill/issues)
+
 ---
 
 ## Overview
@@ -764,6 +766,15 @@ You can also remove the local `~/.agent-switch` directory manually if you want t
 ## Contributing
 
 Contributions are welcome.
+
+For a source checkout, use Node.js 18 or newer and run the focused test suite before submitting a change:
+
+```bash
+npm ci
+npm test
+```
+
+The distributable CLI tarball under `cli/` is built from this repository. After changing CLI source or package metadata, run `npm run build:package` and include the updated tarball. CI checks that the built package matches the committed artifact.
 
 You can help by:
 
