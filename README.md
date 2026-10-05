@@ -438,6 +438,8 @@ agent-switch pi --pi-provider openai
 
 Agent Switch uses Pi's per-run extension API to route the selected provider through its capture proxy; it does not edit `~/.pi/agent/models.json` or Pi credentials. The default is `anthropic`; use `--pi-provider openai` for OpenAI, or pass Pi's `--provider` after `--` (for example, `agent-switch pi -- --provider openai`). Existing `models.json` base URLs for these providers are used as the upstream unless `--upstream` overrides them. Only the selected provider is captured: switching to another provider inside Pi will bypass the proxy, so start a new capture run for that provider. Other Pi providers are not yet supported by this capture mode.
 
+If you select an OpenAI model with a provider-qualified name, such as `--model openai/gpt-4o`, Agent Switch can infer the capture provider from that model. Keep `--pi-provider`, Pi's `--provider`, and any provider-qualified `--model` consistent; conflicting selections stop the run with an error. For a custom Pi endpoint, `--upstream` takes precedence over the provider's `models.json` base URL.
+
 For Codex on Windows, Agent Switch first tries the real `codex` executable on `PATH`, then checks the desktop install path:
 
 ```text
