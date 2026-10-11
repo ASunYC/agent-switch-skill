@@ -754,6 +754,10 @@ You can run temporary commands with package tooling during development, but the 
 
 Current Agent Switch releases route both ChatGPT-login and API-key Codex sessions through a temporary HTTP-only provider, without changing `~/.codex/config.toml`. If a new run is still empty, verify that the bundled CLI is current with `node scripts/install-agent-switch.js`, then inspect the startup output for the selected upstream and capture directory.
 
+### Why are Pi requests missing from a capture?
+
+Pi capture routes one provider per run. Start a new run with `agent-switch pi --pi-provider anthropic` or `agent-switch pi --pi-provider openai`, matching the model selected in Pi. If you switch providers inside Pi, the other provider bypasses that run's capture proxy. Check the upstream printed at startup; use `--upstream <url>` when Pi should connect to a different endpoint.
+
 ### Where do captured conversations go?
 
 New captures are stored under `~/.agent-switch/sessions/<encoded-project-path>-<hash>/`. Use `agent-switch dashboard` to browse them or `agent-switch export <id>` to export one request.
